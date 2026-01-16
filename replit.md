@@ -18,7 +18,7 @@ Preferred communication style: Simple, everyday language.
 
 ### Data Layer
 - **Database**: PostgreSQL is used for all persistent storage, managed with `asyncpg` for asynchronous operations and connection pooling.
-- **Schema**: Key tables include `players`, `cards`, `user_cards`, `drop_rates`, `user_packs`, `trades`, `trade_items`, `decks`, `server_decks`, `rarity_ranges`, `card_templates`, `card_template_fields`, `server_settings`, `card_perks`, `deck_merge_perks`, `user_card_field_overrides`, `mission_templates`, `mission_rarity_scaling`, `active_missions`, `user_missions`, `server_mission_settings`, and `user_mission_cooldowns`. `user_cards` uses UUIDs for unique instance tracking with merge level tracking.
+- **Schema**: Key tables include `players`, `cards`, `user_cards`, `drop_rates`, `user_packs`, `trades`, `trade_items`, `decks`, `server_decks`, `rarity_ranges`, `card_templates`, `card_template_fields`, `server_settings`, `card_perks`, `deck_merge_perks`, `user_card_field_overrides`, `mission_templates`, `mission_rarity_scaling`, `active_missions`, `mission_board_slots`, and `mission_board_messages`. `user_cards` uses UUIDs for unique instance tracking with merge level tracking.
 - **Custom Card Templates**: The `card_templates` table stores custom field definitions per deck (field name, type, required flag, display order), while `card_template_fields` stores actual field values for each card. Supports text, number, and dropdown field types.
 - **Server Settings**: The `server_settings` table stores per-server configurations including active deck assignments and customizations.
 - **Merge System**: The `card_perks` table tracks perk progression history for merged cards, while `deck_merge_perks` defines available merge perks and their scaling parameters per deck. Cards have `mergeable` and `max_merge_level` attributes, while user card instances track `merge_level` and `locked_perk`. The `user_card_field_overrides` table stores instance-specific boosted field values, automatically applying cumulative percentage boosts to numeric template fields that match the locked perk name.
@@ -46,20 +46,19 @@ Preferred communication style: Simple, everyday language.
   - **Inventory Validation**: Verifies card ownership at specific merge levels before allowing trades
   - **Atomic Transfers**: All card transfers happen in a single transaction to prevent data loss
   - **Safety Features**: 5-minute timeout, deck validation, and automatic acceptance reset when trade pool changes
-- **Card Activity Mission System**: Deck creators configure mission templates that spawn based on server chat activity. Features include:
-  - **Activity-Based Spawning**: Missions spawn after 10+ messages from 2+ unique users, with 1-hour cooldown between spawns per server
+- **Mission Board System**: Deck-specific mission boards allow players to accept and complete missions for credit rewards. Features include:
+  - **Deck-Specific Boards**: Each deck has a persistent 10-slot mission board (3 visible + 7 backlog). Missions are tied to decks, not servers.
   - **Rarity Scaling**: Each mission template has configurable rarity tiers with different success rates (70% Common to 30% Mythic), requirements, rewards, and durations
-  - **Reaction-Based Acceptance**: Missions appear as embeds in a designated channel with 20-minute reaction window
-  - **Acceptance Cost**: 5% upfront cost of mission reward to prevent spam acceptance; 4-hour per-user cooldown
+  - **Reaction-Based Selection**: `/missionboard` displays 3 visible missions with 1️⃣2️⃣3️⃣ reaction buttons for selection
+  - **Player Mission Slots**: Players can have up to 3 active missions at once (replaces previous 4-hour cooldown system)
+  - **Acceptance Cost**: 5% upfront cost of mission reward to prevent spam acceptance
   - **Card Requirement**: Players must own a card with the specified numeric field meeting or exceeding the rolled requirement
   - **Success Mechanics**: Base success rate varies by rarity, +5% per merge level (max +99%). Success determined when mission duration expires
   - **Credit Rewards**: Successful missions award rolled credits plus 5% per merge level bonus; failed missions forfeit acceptance cost
-  - **Mission Commands**: `/startmission` (with autocomplete for qualifying cards) to begin, `/mymissions` to view active missions
-  - **User Feedback System**: Enhanced DM notifications for mission events:
-    - **Acceptance Success**: DM includes acceptance cost, 4-hour cooldown timer with Discord timestamp, and next steps
-    - **Acceptance Failure**: DM explains failure reason (insufficient credits, no qualifying card, or cooldown); user's reaction is removed
-    - **Mission Completion**: DM with format "Your mission, [Name] [Rarity], has completed in [Server]. It was successful/a failure." with credit earnings
-    - **Cooldown Expiration**: Automatic DM when 4-hour cooldown expires: "Your mission cooldown is ready in [Server], you can accept a new mission!"
+  - **Auto-Refill**: Background task refills mission boards every 30 minutes, promoting backlog missions to visible slots
+  - **Mission Commands**: `/missionboard` to view available missions, `/mymissions` to view active missions
+  - **Admin Commands**: `!refillboard` to manually trigger board refill, `!mcomplete` to force-complete missions for testing
+  - **Database Tables**: `mission_board_slots` stores persistent mission board state per deck, `mission_board_messages` tracks posted board messages for reaction handling
 
 ### Web Admin Portal Features
 - **Dashboard**: Displays user info, managed Discord servers, assigned decks (showing both created and adopted decks), and deck assignment controls.
@@ -84,12 +83,11 @@ Preferred communication style: Simple, everyday language.
   - Card commands: `/drop`, `/mycards`, `/recycle` (with autocomplete for card_name), `/merge` (with autocomplete for card_name and perk_name) - Hybrid commands
   - Pack commands: `/claimfreepack`, `/buypack`, `/mypacks`, `/freepacknotify` (on/off toggle for DM notifications) - Hybrid commands
   - Trading commands: `/requesttrade`, `/accepttrade`, `/tradeadd` (with autocomplete for card_name), `/traderemove` (with autocomplete for card_name), `/finalize` - Hybrid commands
-  - Mission commands: `/startmission` (with autocomplete for qualifying cards), `/mymissions` - Hybrid commands
+  - Mission commands: `/missionboard` to view and accept missions, `/mymissions` to view active missions - Hybrid commands
   - Info commands: `/cardinfo` (with autocomplete and optional merge_level parameter), `/help`, `/balance`, `/buycredits` - Pure slash commands
 - **DM Notification System**: Users receive DMs for:
   - **Free Pack Cooldowns**: Toggle with `/freepacknotify on/off` per server deck. Notifies when free pack is available to claim.
   - **Mission Completion**: Automatic DM when mission ends, indicating success/failure and credits earned.
-  - **Mission Cooldown**: Automatic DM when 4-hour acceptance cooldown expires, allowing new mission acceptance.
 - **Autocomplete Support**: Commands like `/recycle`, `/merge`, `/tradeadd`, `/traderemove`, and `/cardinfo` use Discord's autocomplete feature to show relevant choices as users type, with merge level indicators where applicable
 - **Hybrid Command Architecture**: Commands use `ctx.defer()` for slash invocations to prevent 3-second timeout errors
 - **Help System**: Custom help command filters admin-only commands for non-admin users
