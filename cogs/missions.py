@@ -944,7 +944,8 @@ class MissionCommands(commands.Cog):
                     time_label = "Completes"
                     expires = m['mission_expires_at']
                 
-                value = f"**Status:** {status}\n"
+                value = f"**ID:** {m['active_mission_id']}\n"
+                value += f"**Status:** {status}\n"
                 value += f"**Rarity:** {m['rarity_rolled']}\n"
                 value += f"**Reward:** {m['reward_rolled']:,} credits\n"
                 if expires:
