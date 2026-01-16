@@ -82,7 +82,7 @@ class PackCommands(commands.Cog):
                     continue
                 
                 try:
-                    user = self.bot.get_user(notif['user_id'])
+                    user = await self.bot.fetch_user(notif['user_id'])
                     guild = self.bot.get_guild(notif['guild_id'])
                     
                     if user and guild:
@@ -490,40 +490,56 @@ class PackCommands(commands.Cog):
     @commands.command(name='resetpacktimer')
     async def reset_pack_timer(self, ctx, target: discord.Member = None):
         """
-        [ADMIN] Reset the free pack claim timer for a user.
+        [ADMIN] Set free pack timer to expire in 10 seconds for notification testing.
         Usage: !resetpacktimer [@user]
-        If no user specified, resets your own timer.
+        If no user specified, sets your own timer.
         """
-        # Check admin permission
         if not self.is_admin(ctx.author.id):
             await ctx.send("❌ This command is admin-only!")
             return
         
-        # Use target user or command author
         target_user = target or ctx.author
         user_id = target_user.id
+        guild_id = ctx.guild.id if ctx.guild else None
+        
+        if not guild_id:
+            await ctx.send("❌ This command must be used in a server!")
+            return
         
         async with self.db_pool.acquire() as conn:
-            # Reset the timer by setting last_drop_ts to NULL
+            deck = await self.bot.get_server_deck(guild_id)
+            if not deck:
+                await ctx.send("❌ No deck assigned to this server!")
+                return
+            
+            cooldown_hours = deck.get('free_pack_cooldown_hours', 8)
+            now = datetime.now(timezone.utc)
+            last_drop = now - timedelta(hours=cooldown_hours) + timedelta(seconds=10)
+            
             result = await conn.execute(
-                "UPDATE players SET last_drop_ts = NULL WHERE user_id = $1",
-                user_id
+                "UPDATE players SET last_drop_ts = $1 WHERE user_id = $2",
+                last_drop, user_id
             )
             
-            # If no player record exists, create one
             if result == "UPDATE 0":
                 await conn.execute(
-                    "INSERT INTO players (user_id, credits, last_drop_ts) VALUES ($1, 0, NULL)",
-                    user_id
+                    "INSERT INTO players (user_id, credits, last_drop_ts) VALUES ($1, 0, $2)",
+                    user_id, last_drop
                 )
+            
+            await conn.execute(
+                """UPDATE user_freepack_notifications 
+                   SET last_notified_at = NULL
+                   WHERE user_id = $1 AND deck_id = $2""",
+                user_id, deck['deck_id']
+            )
         
         embed = discord.Embed(
-            title="⏰ Pack Timer Reset",
-            description=f"Free pack timer has been reset for {target_user.mention}",
+            title="⏰ Pack Timer Set",
+            description=f"Free pack timer for {target_user.mention} will expire in **10 seconds**.\n"
+                       f"The notification loop runs every 5 minutes, so the DM may take a moment.",
             color=discord.Color.green()
         )
-        
-        embed.set_footer(text=f"They can now use /claimfreepack immediately")
         
         await ctx.send(embed=embed)
     

@@ -986,17 +986,17 @@ class MissionCommands(commands.Cog):
             await ctx.send(f"✅ Mission board refilled for deck **{deck['name']}**!")
 
     @commands.command(name='mcomplete')
-    async def force_complete_mission(self, ctx, mission_id: int, success: str = "yes"):
+    async def force_complete_mission(self, ctx, mission_id: int):
         """
-        [ADMIN] Force complete a mission.
-        Usage: !mcomplete <mission_id> [yes/no]
+        [ADMIN] Set a mission to complete in 10 seconds for natural completion testing.
+        Usage: !mcomplete <mission_id>
         """
         if not self.is_admin(ctx.author.id):
             await ctx.send("This command is only available to DeckForge admins.")
             return
         
-        is_success = success.lower() in ['yes', 'true', '1', 'success']
         now = datetime.now(timezone.utc)
+        expires_soon = now + timedelta(seconds=10)
         
         async with self.db_pool.acquire() as conn:
             mission = await conn.fetchrow(
@@ -1011,70 +1011,21 @@ class MissionCommands(commands.Cog):
                 await ctx.send(f"Mission #{mission_id} not found!")
                 return
             
-            if is_success:
-                credits_earned = mission['reward_rolled']
-                
-                await conn.execute(
-                    "UPDATE players SET credits = credits + $1 WHERE user_id = $2",
-                    credits_earned, mission['accepted_by']
-                )
-                
-                await conn.execute(
-                    """UPDATE active_missions 
-                       SET status = 'completed', completed_at = $1
-                       WHERE active_mission_id = $2""",
-                    now, mission_id
-                )
-                
-                await conn.execute(
-                    """UPDATE user_missions 
-                       SET status = 'completed', completed_at = $1, credits_earned = $2
-                       WHERE active_mission_id = $3""",
-                    now, credits_earned, mission_id
-                )
-                
-                try:
-                    user = await self.bot.fetch_user(mission['accepted_by'])
-                    guild = self.bot.get_guild(mission['guild_id'])
-                    guild_name = guild.name if guild else "Unknown Server"
-                    if user:
-                        await user.send(
-                            f"🎉 Your mission, **{mission['template_name']}** [{mission['rarity_rolled']}], "
-                            f"has completed in **{guild_name}**. It was successful, and you have gained "
-                            f"**{credits_earned:,}** credits!"
-                        )
-                except Exception as e:
-                    print(f"Failed to send mission completion DM: {e}")
-                
-                await ctx.send(f"✅ Mission #{mission_id} marked as **successful**. {credits_earned:,} credits awarded.")
-            else:
-                await conn.execute(
-                    """UPDATE active_missions 
-                       SET status = 'failed', completed_at = $1
-                       WHERE active_mission_id = $2""",
-                    now, mission_id
-                )
-                
-                await conn.execute(
-                    """UPDATE user_missions 
-                       SET status = 'failed', completed_at = $1
-                       WHERE active_mission_id = $2""",
-                    now, mission_id
-                )
-                
-                try:
-                    user = await self.bot.fetch_user(mission['accepted_by'])
-                    guild = self.bot.get_guild(mission['guild_id'])
-                    guild_name = guild.name if guild else "Unknown Server"
-                    if user:
-                        await user.send(
-                            f"❌ Your mission, **{mission['template_name']}** [{mission['rarity_rolled']}], "
-                            f"has completed in **{guild_name}**. It was a failure."
-                        )
-                except Exception as e:
-                    print(f"Failed to send mission failure DM: {e}")
-                
-                await ctx.send(f"❌ Mission #{mission_id} marked as **failed**.")
+            if mission['status'] not in ('pending', 'active'):
+                await ctx.send(f"Mission #{mission_id} is already {mission['status']}!")
+                return
+            
+            await conn.execute(
+                """UPDATE active_missions 
+                   SET mission_expires_at = $1
+                   WHERE active_mission_id = $2""",
+                expires_soon, mission_id
+            )
+            
+            await ctx.send(
+                f"⏱️ Mission #{mission_id} (**{mission['template_name']}**) will complete naturally in **10 seconds**.\n"
+                f"The lifecycle loop runs every 5 minutes, so check back shortly or wait for the DM!"
+            )
 
 
 async def setup(bot):
