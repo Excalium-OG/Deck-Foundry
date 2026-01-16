@@ -860,7 +860,7 @@ class MissionCommands(commands.Cog):
                         )
                         
                         try:
-                            user = self.bot.get_user(mission['accepted_by'])
+                            user = await self.bot.fetch_user(mission['accepted_by'])
                             guild = self.bot.get_guild(mission['guild_id'])
                             guild_name = guild.name if guild else "Unknown Server"
                             if user:
@@ -870,8 +870,8 @@ class MissionCommands(commands.Cog):
                                     f"has completed in **{guild_name}**. It was successful, and you have gained "
                                     f"**{total_credits:,}** credits!{bonus_text}"
                                 )
-                        except:
-                            pass
+                        except Exception as e:
+                            print(f"Failed to send mission success DM: {e}")
                     else:
                         await conn.execute(
                             """UPDATE active_missions 
@@ -888,7 +888,7 @@ class MissionCommands(commands.Cog):
                         )
                         
                         try:
-                            user = self.bot.get_user(mission['accepted_by'])
+                            user = await self.bot.fetch_user(mission['accepted_by'])
                             guild = self.bot.get_guild(mission['guild_id'])
                             guild_name = guild.name if guild else "Unknown Server"
                             if user:
@@ -896,8 +896,8 @@ class MissionCommands(commands.Cog):
                                     f"❌ Your mission, **{mission['template_name']}** [{mission['rarity_rolled']}], "
                                     f"has completed in **{guild_name}**. It was a failure."
                                 )
-                        except:
-                            pass
+                        except Exception as e:
+                            print(f"Failed to send mission failure DM: {e}")
                             
                 except Exception as e:
                     print(f"Error processing mission {mission['active_mission_id']}: {e}")
@@ -1034,7 +1034,7 @@ class MissionCommands(commands.Cog):
                 )
                 
                 try:
-                    user = self.bot.get_user(mission['accepted_by'])
+                    user = await self.bot.fetch_user(mission['accepted_by'])
                     guild = self.bot.get_guild(mission['guild_id'])
                     guild_name = guild.name if guild else "Unknown Server"
                     if user:
@@ -1043,8 +1043,8 @@ class MissionCommands(commands.Cog):
                             f"has completed in **{guild_name}**. It was successful, and you have gained "
                             f"**{credits_earned:,}** credits!"
                         )
-                except:
-                    pass
+                except Exception as e:
+                    print(f"Failed to send mission completion DM: {e}")
                 
                 await ctx.send(f"✅ Mission #{mission_id} marked as **successful**. {credits_earned:,} credits awarded.")
             else:
@@ -1063,7 +1063,7 @@ class MissionCommands(commands.Cog):
                 )
                 
                 try:
-                    user = self.bot.get_user(mission['accepted_by'])
+                    user = await self.bot.fetch_user(mission['accepted_by'])
                     guild = self.bot.get_guild(mission['guild_id'])
                     guild_name = guild.name if guild else "Unknown Server"
                     if user:
@@ -1071,8 +1071,8 @@ class MissionCommands(commands.Cog):
                             f"❌ Your mission, **{mission['template_name']}** [{mission['rarity_rolled']}], "
                             f"has completed in **{guild_name}**. It was a failure."
                         )
-                except:
-                    pass
+                except Exception as e:
+                    print(f"Failed to send mission failure DM: {e}")
                 
                 await ctx.send(f"❌ Mission #{mission_id} marked as **failed**.")
 
