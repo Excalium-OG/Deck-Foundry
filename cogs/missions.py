@@ -213,19 +213,8 @@ class MissionCommands(commands.Cog):
                 """SELECT mbs.*, mt.name as template_name, mt.description, mt.requirement_field
                    FROM mission_board_slots mbs
                    JOIN mission_templates mt ON mbs.mission_template_id = mt.mission_template_id
-                   WHERE mbs.deck_id = $1
-                   ORDER BY 
-                       CASE mbs.rarity_rolled 
-                           WHEN 'Mythic' THEN 1
-                           WHEN 'Legendary' THEN 2
-                           WHEN 'Epic' THEN 3
-                           WHEN 'Rare' THEN 4
-                           WHEN 'Exceptional' THEN 5
-                           WHEN 'Uncommon' THEN 6
-                           WHEN 'Common' THEN 7
-                       END,
-                       mbs.slot_position
-                   LIMIT $2""",
+                   WHERE mbs.deck_id = $1 AND mbs.slot_position <= $2
+                   ORDER BY mbs.slot_position""",
                 deck_id, BOARD_VISIBLE_SLOTS
             )
             
@@ -347,19 +336,8 @@ class MissionCommands(commands.Cog):
                 """SELECT mbs.*, mt.name as template_name, mt.requirement_field
                    FROM mission_board_slots mbs
                    JOIN mission_templates mt ON mbs.mission_template_id = mt.mission_template_id
-                   WHERE mbs.deck_id = $1
-                   ORDER BY 
-                       CASE mbs.rarity_rolled 
-                           WHEN 'Mythic' THEN 1
-                           WHEN 'Legendary' THEN 2
-                           WHEN 'Epic' THEN 3
-                           WHEN 'Rare' THEN 4
-                           WHEN 'Exceptional' THEN 5
-                           WHEN 'Uncommon' THEN 6
-                           WHEN 'Common' THEN 7
-                       END,
-                       mbs.slot_position
-                   LIMIT $2""",
+                   WHERE mbs.deck_id = $1 AND mbs.slot_position <= $2
+                   ORDER BY mbs.slot_position""",
                 deck_id, BOARD_VISIBLE_SLOTS
             )
             
@@ -467,12 +445,20 @@ class MissionCommands(commands.Cog):
                         mission['slot_id']
                     )
                     
+                    removed_position = mission['slot_position']
+                    await conn.execute(
+                        """UPDATE mission_board_slots 
+                           SET slot_position = slot_position - 1
+                           WHERE deck_id = $1 AND slot_position > $2""",
+                        deck_id, removed_position
+                    )
+                    
                     templates = await conn.fetch(
                         """SELECT * FROM mission_templates WHERE deck_id = $1 AND is_active = TRUE""",
                         deck_id
                     )
                     if templates:
-                        await self.generate_mission_slot(conn, deck_id, mission['slot_position'], templates)
+                        await self.generate_mission_slot(conn, deck_id, BOARD_TOTAL_SLOTS, templates)
                     
             except Exception as e:
                 print(f"Error accepting mission: {e}")
