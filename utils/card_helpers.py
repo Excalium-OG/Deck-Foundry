@@ -2,8 +2,86 @@
 Utility functions for DeckForge card management
 """
 from datetime import datetime, timedelta, timezone
-from typing import Optional
+from typing import Optional, Tuple
 import discord
+
+
+async def get_player_deck_state(conn, user_id: int, deck_id: int) -> dict:
+    """
+    Get or create player deck state (credits and cooldown per deck).
+    
+    Args:
+        conn: Database connection
+        user_id: Discord user ID
+        deck_id: Deck ID
+        
+    Returns:
+        Dict with credits and last_drop_ts
+    """
+    state = await conn.fetchrow(
+        """SELECT credits, last_drop_ts FROM player_deck_state 
+           WHERE user_id = $1 AND deck_id = $2""",
+        user_id, deck_id
+    )
+    
+    if state:
+        return dict(state)
+    
+    await conn.execute(
+        """INSERT INTO player_deck_state (user_id, deck_id, credits, last_drop_ts)
+           VALUES ($1, $2, 0, NULL)
+           ON CONFLICT (user_id, deck_id) DO NOTHING""",
+        user_id, deck_id
+    )
+    
+    return {'credits': 0, 'last_drop_ts': None}
+
+
+async def update_player_credits(conn, user_id: int, deck_id: int, amount: int) -> int:
+    """
+    Add or subtract credits for a player in a specific deck.
+    
+    Args:
+        conn: Database connection
+        user_id: Discord user ID
+        deck_id: Deck ID
+        amount: Credits to add (positive) or subtract (negative)
+        
+    Returns:
+        New credit balance
+    """
+    result = await conn.fetchrow(
+        """INSERT INTO player_deck_state (user_id, deck_id, credits, last_drop_ts)
+           VALUES ($1, $2, GREATEST(0, $3), NULL)
+           ON CONFLICT (user_id, deck_id) 
+           DO UPDATE SET credits = GREATEST(0, player_deck_state.credits + $3),
+                         updated_at = NOW()
+           RETURNING credits""",
+        user_id, deck_id, amount
+    )
+    return result['credits']
+
+
+async def update_player_drop_ts(conn, user_id: int, deck_id: int, timestamp: Optional[datetime] = None) -> None:
+    """
+    Update the last drop timestamp for a player in a specific deck.
+    
+    Args:
+        conn: Database connection
+        user_id: Discord user ID
+        deck_id: Deck ID
+        timestamp: Timestamp to set (defaults to now)
+    """
+    if timestamp is None:
+        timestamp = datetime.now(timezone.utc)
+    
+    await conn.execute(
+        """INSERT INTO player_deck_state (user_id, deck_id, credits, last_drop_ts)
+           VALUES ($1, $2, 0, $3)
+           ON CONFLICT (user_id, deck_id) 
+           DO UPDATE SET last_drop_ts = $3, updated_at = NOW()""",
+        user_id, deck_id, timestamp
+    )
 
 # Rarity hierarchy (ascending order: Common -> Mythic)
 RARITY_HIERARCHY = [
