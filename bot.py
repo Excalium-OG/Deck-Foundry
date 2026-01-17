@@ -85,7 +85,8 @@ class DeckForgeBot(commands.Bot):
             'db/migrations/0011_mission_system.sql',
             'db/migrations/0012_cooldown_notification.sql',
             'db/migrations/0013_freepack_notifications.sql',
-            'db/migrations/0014_mission_board.sql'
+            'db/migrations/0014_mission_board.sql',
+            'db/migrations/0015_player_deck_state.sql'
         ]
         
         async with self.db_pool.acquire() as conn:

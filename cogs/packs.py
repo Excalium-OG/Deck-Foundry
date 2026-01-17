@@ -13,7 +13,10 @@ from typing import Optional, List
 from utils.card_helpers import (
     check_drop_cooldown,
     format_cooldown_time,
-    RARITY_HIERARCHY
+    RARITY_HIERARCHY,
+    get_player_deck_state,
+    update_player_credits,
+    update_player_drop_ts
 )
 from utils.pack_logic import (
     PACK_TYPES,
@@ -56,20 +59,20 @@ class PackCommands(commands.Cog):
             notifications_to_send = await conn.fetch(
                 """SELECT ufn.user_id, ufn.deck_id, d.name as deck_name,
                           d.free_pack_cooldown_hours,
-                          p.last_drop_ts, sd.guild_id
+                          pds.last_drop_ts, sd.guild_id
                    FROM user_freepack_notifications ufn
                    JOIN decks d ON ufn.deck_id = d.deck_id
                    JOIN server_decks sd ON d.deck_id = sd.deck_id
-                   LEFT JOIN players p ON ufn.user_id = p.user_id
+                   LEFT JOIN player_deck_state pds ON ufn.user_id = pds.user_id AND ufn.deck_id = pds.deck_id
                    WHERE ufn.enabled = TRUE
                    AND (
-                       p.last_drop_ts IS NULL 
-                       OR p.last_drop_ts + (COALESCE(d.free_pack_cooldown_hours, 8) || ' hours')::INTERVAL <= $1
+                       pds.last_drop_ts IS NULL 
+                       OR pds.last_drop_ts + (COALESCE(d.free_pack_cooldown_hours, 8) || ' hours')::INTERVAL <= $1
                    )
                    AND (
                        ufn.last_notified_at IS NULL 
-                       OR ufn.last_notified_at < p.last_drop_ts
-                       OR (p.last_drop_ts IS NULL AND ufn.last_notified_at < $1 - INTERVAL '1 hour')
+                       OR ufn.last_notified_at < pds.last_drop_ts
+                       OR (pds.last_drop_ts IS NULL AND ufn.last_notified_at < $1 - INTERVAL '1 hour')
                    )""",
                 now
             )
@@ -191,23 +194,12 @@ class PackCommands(commands.Cog):
         
         # Get cooldown from deck settings
         cooldown_hours = deck.get('free_pack_cooldown_hours', 8)
+        deck_id = deck['deck_id']
         
         async with self.db_pool.acquire() as conn:
-            # Get or create player record
-            player = await conn.fetchrow(
-                "SELECT user_id, last_drop_ts FROM players WHERE user_id = $1",
-                user_id
-            )
-            
-            if not player:
-                # Create new player
-                await conn.execute(
-                    "INSERT INTO players (user_id, credits, last_drop_ts) VALUES ($1, 0, NULL)",
-                    user_id
-                )
-                last_drop_ts = None
-            else:
-                last_drop_ts = player['last_drop_ts']
+            # Get or create player deck state
+            state = await get_player_deck_state(conn, user_id, deck_id)
+            last_drop_ts = state['last_drop_ts']
             
             # Check cooldown using deck's configured cooldown
             can_claim, time_remaining = check_drop_cooldown(last_drop_ts, cooldown_hours)
@@ -234,11 +226,8 @@ class PackCommands(commands.Cog):
                 await ctx.send(f"❌ Cannot claim pack - you would exceed the {MAX_TOTAL_PACKS} pack limit!")
                 return
             
-            # Update last claim timestamp
-            await conn.execute(
-                "UPDATE players SET last_drop_ts = $1 WHERE user_id = $2",
-                datetime.now(timezone.utc), user_id
-            )
+            # Update last claim timestamp for this deck
+            await update_player_drop_ts(conn, user_id, deck_id)
             
             embed = discord.Embed(
                 title="📦 Free Pack Claimed!",
@@ -328,6 +317,17 @@ class PackCommands(commands.Cog):
             await ctx.defer()
         
         user_id = ctx.author.id
+        guild_id = ctx.guild.id if ctx.guild else None
+        
+        if not guild_id:
+            await ctx.send("❌ This command must be used in a server!")
+            return
+        
+        # Get server deck
+        deck = await self.bot.get_server_deck(guild_id)
+        if not deck:
+            await ctx.send("❌ No deck assigned to this server!")
+            return
         
         # Validate amount
         if amount < 1 or amount > 10:
@@ -345,24 +345,12 @@ class PackCommands(commands.Cog):
         # Calculate cost
         price_per_pack = PACK_PRICES.get(pack_type, 100)
         total_cost = price_per_pack * amount
+        deck_id = deck['deck_id']
         
         async with self.db_pool.acquire() as conn:
-            # Get player's credits
-            player = await conn.fetchrow(
-                "SELECT credits FROM players WHERE user_id = $1",
-                user_id
-            )
-            
-            if not player:
-                # Create new player with 0 credits
-                await conn.execute(
-                    "INSERT INTO players (user_id, credits, last_drop_ts) VALUES ($1, 0, NULL)",
-                    user_id
-                )
-                await ctx.send("❌ You don't have enough credits! You have **0** credits.")
-                return
-            
-            current_credits = player['credits']
+            # Get player's deck-specific credits
+            state = await get_player_deck_state(conn, user_id, deck_id)
+            current_credits = state['credits']
             
             # Check if user has enough credits
             if current_credits < total_cost:
@@ -387,11 +375,8 @@ class PackCommands(commands.Cog):
             
             # Process purchase in transaction
             async with conn.transaction():
-                # Deduct credits
-                await conn.execute(
-                    "UPDATE players SET credits = credits - $1 WHERE user_id = $2",
-                    total_cost, user_id
-                )
+                # Deduct credits from deck-specific balance
+                new_credits = await update_player_credits(conn, user_id, deck_id, -total_cost)
                 
                 # Add packs
                 await conn.execute(
@@ -401,8 +386,6 @@ class PackCommands(commands.Cog):
                        DO UPDATE SET quantity = user_packs.quantity + $3""",
                     user_id, pack_type, amount
                 )
-            
-            new_credits = current_credits - total_cost
             new_pack_total = total_packs + amount
             
             # Send confirmation
@@ -449,33 +432,27 @@ class PackCommands(commands.Cog):
             await ctx.send("❌ Amount must be between 1 and 1,000,000!")
             return
         
+        # Get server deck
+        guild_id = ctx.guild.id if ctx.guild else None
+        if not guild_id:
+            await ctx.send("❌ This command must be used in a server!")
+            return
+        
+        deck = await self.bot.get_server_deck(guild_id)
+        if not deck:
+            await ctx.send("❌ No deck assigned to this server!")
+            return
+        
         user_id = target.id
+        deck_id = deck['deck_id']
         
         async with self.db_pool.acquire() as conn:
-            # Get or create player
-            player = await conn.fetchrow(
-                "SELECT credits FROM players WHERE user_id = $1",
-                user_id
-            )
-            
-            if not player:
-                # Create new player
-                await conn.execute(
-                    "INSERT INTO players (user_id, credits, last_drop_ts) VALUES ($1, $2, NULL)",
-                    user_id, amount
-                )
-                new_credits = amount
-            else:
-                # Update credits
-                await conn.execute(
-                    "UPDATE players SET credits = credits + $1 WHERE user_id = $2",
-                    amount, user_id
-                )
-                new_credits = player['credits'] + amount
+            # Add credits to deck-specific balance
+            new_credits = await update_player_credits(conn, user_id, deck_id, amount)
         
         embed = discord.Embed(
             title="💰 Credits Awarded!",
-            description=f"{target.mention} received **{amount}** credits!",
+            description=f"{target.mention} received **{amount}** credits for **{deck['name']}**!",
             color=discord.Color.gold()
         )
         
@@ -513,25 +490,18 @@ class PackCommands(commands.Cog):
                 return
             
             cooldown_hours = deck.get('free_pack_cooldown_hours', 8)
+            deck_id = deck['deck_id']
             now = datetime.now(timezone.utc)
             last_drop = now - timedelta(hours=cooldown_hours) + timedelta(seconds=10)
             
-            result = await conn.execute(
-                "UPDATE players SET last_drop_ts = $1 WHERE user_id = $2",
-                last_drop, user_id
-            )
-            
-            if result == "UPDATE 0":
-                await conn.execute(
-                    "INSERT INTO players (user_id, credits, last_drop_ts) VALUES ($1, 0, $2)",
-                    user_id, last_drop
-                )
+            # Update deck-specific last_drop_ts
+            await update_player_drop_ts(conn, user_id, deck_id, last_drop)
             
             await conn.execute(
                 """UPDATE user_freepack_notifications 
                    SET last_notified_at = NULL
                    WHERE user_id = $1 AND deck_id = $2""",
-                user_id, deck['deck_id']
+                user_id, deck_id
             )
         
         embed = discord.Embed(

@@ -14,7 +14,8 @@ from utils.card_helpers import (
     validate_rarity,
     sort_cards_by_rarity,
     create_card_embed,
-    RARITY_HIERARCHY
+    RARITY_HIERARCHY,
+    get_player_deck_state
 )
 from utils.drop_helpers import get_default_drop_rates
 from utils.pack_logic import validate_pack_type, format_pack_type
@@ -277,30 +278,34 @@ class SlashCommands(commands.Cog):
         
         await interaction.followup.send(embed=embed)
     
-    @app_commands.command(name="balance", description="Check your credit balance")
+    @app_commands.command(name="balance", description="Check your credit balance for this server's deck")
     async def balance(self, interaction: discord.Interaction):
-        """Check your credit balance"""
+        """Check your credit balance for this server's deck"""
+        if not interaction.guild:
+            await interaction.response.send_message("❌ This command must be used in a server!", ephemeral=True)
+            return
+        
         user_id = interaction.user.id
+        guild_id = interaction.guild.id
+        
+        deck = await self.bot.get_server_deck(guild_id)
+        if not deck:
+            await interaction.response.send_message("❌ No deck assigned to this server!", ephemeral=True)
+            return
         
         async with self.db_pool.acquire() as conn:
-            player = await conn.fetchrow(
-                "SELECT credits FROM players WHERE user_id = $1",
-                user_id
-            )
+            state = await get_player_deck_state(conn, user_id, deck['deck_id'])
         
-        if not player:
-            credits = 0
-        else:
-            credits = player['credits']
+        credits = state['credits']
         
         embed = discord.Embed(
             title="💰 Credit Balance",
-            description=f"You have **{credits:,}** credits",
+            description=f"You have **{credits:,}** credits for **{deck['name']}**",
             color=discord.Color.gold()
         )
         embed.add_field(
             name="💡 How to Earn Credits",
-            value="• Recycle duplicate cards with `/recycle`\n• Microtransactions coming soon!",
+            value="• Recycle duplicate cards with `/recycle`\n• Complete missions successfully\n• Microtransactions coming soon!",
             inline=False
         )
         

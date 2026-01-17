@@ -18,7 +18,8 @@ from utils.card_helpers import (
     format_cooldown_time,
     validate_image_attachment,
     create_card_embed,
-    RARITY_HIERARCHY
+    RARITY_HIERARCHY,
+    update_player_credits
 )
 from utils.merge_helpers import format_merge_level_display
 
@@ -543,14 +544,8 @@ class CardCommands(commands.Cog):
                     instance_ids
                 )
                 
-                # Credit user
-                await conn.execute(
-                    """INSERT INTO players (user_id, credits)
-                       VALUES ($1, $2)
-                       ON CONFLICT (user_id)
-                       DO UPDATE SET credits = players.credits + $2""",
-                    user_id, total_credits
-                )
+                # Credit user (per-deck credits)
+                await update_player_credits(conn, user_id, deck_id, total_credits)
         
         # Confirmation
         merge_display = format_merge_level_display(merge_level)

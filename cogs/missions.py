@@ -7,6 +7,8 @@ from datetime import datetime, timezone, timedelta
 from typing import Optional, Dict, List
 import math
 
+from utils.card_helpers import get_player_deck_state, update_player_credits
+
 RARITY_HIERARCHY = ['Common', 'Uncommon', 'Exceptional', 'Rare', 'Epic', 'Legendary', 'Mythic']
 
 RARITY_WEIGHTS = {
@@ -346,18 +348,16 @@ class MissionCommands(commands.Cog):
             
             mission = missions[slot_index]
             
-            player = await conn.fetchrow(
-                "SELECT credits FROM players WHERE user_id = $1",
-                payload.user_id
-            )
+            # Get player's deck-specific credits
+            state = await get_player_deck_state(conn, payload.user_id, deck_id)
+            current_credits = state['credits']
             
             acceptance_cost = int(mission['reward_rolled'] * 0.05)
             
-            if not player or player['credits'] < acceptance_cost:
+            if current_credits < acceptance_cost:
                 try:
                     user = self.bot.get_user(payload.user_id)
                     if user:
-                        current_credits = player['credits'] if player else 0
                         await user.send(
                             f"❌ **Unable to Accept Mission**\n"
                             f"You need **{acceptance_cost}** credits to accept this mission, "
@@ -412,10 +412,8 @@ class MissionCommands(commands.Cog):
             
             try:
                 async with conn.transaction():
-                    await conn.execute(
-                        "UPDATE players SET credits = credits - $1 WHERE user_id = $2",
-                        acceptance_cost, payload.user_id
-                    )
+                    # Deduct acceptance cost from deck-specific credits
+                    await update_player_credits(conn, payload.user_id, deck_id, -acceptance_cost)
                     
                     result = await conn.fetchrow(
                         """INSERT INTO active_missions 
@@ -840,10 +838,8 @@ class MissionCommands(commands.Cog):
                         credit_bonus = int(credits_earned * merge_level * 0.05)
                         total_credits = credits_earned + credit_bonus
                         
-                        await conn.execute(
-                            "UPDATE players SET credits = credits + $1 WHERE user_id = $2",
-                            total_credits, mission['accepted_by']
-                        )
+                        # Award credits to deck-specific balance
+                        await update_player_credits(conn, mission['accepted_by'], mission['deck_id'], total_credits)
                         
                         await conn.execute(
                             """UPDATE active_missions 

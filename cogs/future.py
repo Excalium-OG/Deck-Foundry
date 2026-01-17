@@ -7,6 +7,8 @@ from discord.ext import commands
 import asyncpg
 from typing import Optional
 
+from utils.card_helpers import get_player_deck_state
+
 
 class FutureCommands(commands.Cog):
     """Cog for placeholder/future feature commands"""
@@ -41,25 +43,29 @@ class FutureCommands(commands.Cog):
     @commands.command(name='balance')
     async def check_balance(self, ctx):
         """
-        Check your credit balance.
+        Check your credit balance for this server's deck.
         Usage: /balance
         """
+        if not ctx.guild:
+            await ctx.send("❌ This command must be used in a server!")
+            return
+        
         user_id = ctx.author.id
+        guild_id = ctx.guild.id
+        
+        deck = await self.bot.get_server_deck(guild_id)
+        if not deck:
+            await ctx.send("❌ No deck assigned to this server!")
+            return
         
         async with self.db_pool.acquire() as conn:
-            player = await conn.fetchrow(
-                "SELECT credits FROM players WHERE user_id = $1",
-                user_id
-            )
+            state = await get_player_deck_state(conn, user_id, deck['deck_id'])
         
-        if not player:
-            credits = 0
-        else:
-            credits = player['credits']
+        credits = state['credits']
         
         embed = discord.Embed(
             title="💰 Credit Balance",
-            description=f"You have **{credits:,}** credits",
+            description=f"You have **{credits:,}** credits for **{deck['name']}**",
             color=discord.Color.gold()
         )
         

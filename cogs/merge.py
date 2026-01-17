@@ -19,6 +19,7 @@ from utils.merge_helpers import (
     validate_merge_eligibility,
     format_merge_level_display
 )
+from utils.card_helpers import get_player_deck_state, update_player_credits
 
 
 class MergeCommands(commands.Cog):
@@ -341,14 +342,11 @@ class MergeCommands(commands.Cog):
             # Calculate merge cost
             merge_cost = calculate_merge_cost(rarity, current_level)
             
-            # Check user balance
-            player = await conn.fetchrow(
-                "SELECT credits FROM players WHERE user_id = $1",
-                user_id
-            )
+            # Check user's deck-specific balance
+            state = await get_player_deck_state(conn, user_id, deck_id)
+            current_credits = state['credits']
             
-            if not player or player['credits'] < merge_cost:
-                current_credits = player['credits'] if player else 0
+            if current_credits < merge_cost:
                 await ctx.send(
                     f"❌ Insufficient credits!\n"
                     f"Merge cost: **{merge_cost:,}** credits\n"
@@ -435,11 +433,8 @@ class MergeCommands(commands.Cog):
             
             # Execute merge in transaction
             async with conn.transaction():
-                # Deduct credits
-                await conn.execute(
-                    "UPDATE players SET credits = credits - $1 WHERE user_id = $2",
-                    merge_cost, user_id
-                )
+                # Deduct credits from deck-specific balance
+                await update_player_credits(conn, user_id, deck_id, -merge_cost)
                 
                 # Keep the first card, update it
                 await conn.execute(
