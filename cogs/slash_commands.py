@@ -150,17 +150,22 @@ class SlashCommands(commands.Cog):
                 )
                 return
             
+            print("[CARDINFO] Extracting instance data...")
             card_id = instance['card_id']
             merge_level = instance['merge_level']
             locked_perk = instance['locked_perk']
             instance_id = instance['instance_id']
+            print(f"[CARDINFO] card_id={card_id}, merge_level={merge_level}, locked_perk={locked_perk}")
             
+            print("[CARDINFO] Fetching owned_count...")
             owned_count = await conn.fetchval(
                 """SELECT COUNT(*) FROM user_cards 
                    WHERE user_id = $1 AND card_id = $2 AND recycled_at IS NULL""",
                 user_id, card_id
             )
+            print(f"[CARDINFO] owned_count={owned_count}")
             
+            print("[CARDINFO] Fetching template_fields...")
             template_fields = await conn.fetch(
                 """SELECT ctf.field_value, ct.field_name, ct.field_type, ct.template_id
                    FROM card_template_fields ctf
@@ -169,9 +174,11 @@ class SlashCommands(commands.Cog):
                    ORDER BY ct.field_order""",
                 card_id
             )
+            print(f"[CARDINFO] template_fields count={len(template_fields)}")
             
             overrides = {}
             if merge_level > 0:
+                print("[CARDINFO] Fetching overrides...")
                 override_rows = await conn.fetch(
                     """SELECT template_id, overridden_value, metadata
                        FROM user_card_field_overrides
@@ -179,11 +186,14 @@ class SlashCommands(commands.Cog):
                     instance_id
                 )
                 overrides = {row['template_id']: row for row in override_rows}
+                print(f"[CARDINFO] overrides count={len(overrides)}")
         
+        print("[CARDINFO] Building embed...")
         from utils.merge_helpers import format_merge_level_display, calculate_cumulative_perk_boost
         
         merge_display = format_merge_level_display(merge_level) if merge_level > 0 else ""
         title = f"{instance['name']} {merge_display}".strip()
+        print(f"[CARDINFO] title={title}")
         
         color = RARITY_COLORS.get(instance['rarity'], discord.Color.default())
         embed = discord.Embed(title=title, color=color)
