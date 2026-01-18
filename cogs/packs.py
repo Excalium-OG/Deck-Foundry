@@ -16,7 +16,12 @@ from utils.card_helpers import (
     RARITY_HIERARCHY,
     get_player_deck_state,
     update_player_credits,
-    update_player_drop_ts
+    update_player_drop_ts,
+    get_inventory_item,
+    add_inventory_item,
+    remove_inventory_item,
+    get_inventory_by_type,
+    get_total_items_by_type
 )
 from utils.pack_logic import (
     PACK_TYPES,
@@ -108,63 +113,28 @@ class PackCommands(commands.Cog):
         """Check if user is an admin"""
         return user_id in self.admin_ids or user_id == self.bot.owner_id
     
-    async def get_total_packs(self, conn, user_id: int) -> int:
-        """Get total number of packs a user owns"""
-        result = await conn.fetchval(
-            "SELECT COALESCE(SUM(quantity), 0) FROM user_packs WHERE user_id = $1",
-            user_id
-        )
-        return result or 0
+    async def get_total_packs(self, conn, user_id: int, deck_id: int) -> int:
+        """Get total number of packs a user owns for a specific deck"""
+        return await get_total_items_by_type(conn, user_id, deck_id, 'pack')
     
-    async def get_pack_quantity(self, conn, user_id: int, pack_type: str) -> int:
-        """Get quantity of a specific pack type for a user"""
-        result = await conn.fetchval(
-            "SELECT quantity FROM user_packs WHERE user_id = $1 AND pack_type = $2",
-            user_id, pack_type
-        )
-        return result or 0
+    async def get_pack_quantity(self, conn, user_id: int, deck_id: int, pack_type: str) -> int:
+        """Get quantity of a specific pack type for a user in a deck"""
+        return await get_inventory_item(conn, user_id, deck_id, 'pack', pack_type)
     
-    async def add_packs(self, conn, user_id: int, pack_type: str, quantity: int) -> bool:
+    async def add_packs(self, conn, user_id: int, deck_id: int, pack_type: str, quantity: int) -> bool:
         """Add packs to user inventory. Returns False if would exceed max."""
-        # Check current total
-        total_packs = await self.get_total_packs(conn, user_id)
+        total_packs = await self.get_total_packs(conn, user_id, deck_id)
         
         if total_packs + quantity > MAX_TOTAL_PACKS:
             return False
         
-        # Upsert pack quantity
-        await conn.execute(
-            """INSERT INTO user_packs (user_id, pack_type, quantity)
-               VALUES ($1, $2, $3)
-               ON CONFLICT (user_id, pack_type)
-               DO UPDATE SET quantity = user_packs.quantity + $3""",
-            user_id, pack_type, quantity
-        )
+        await add_inventory_item(conn, user_id, deck_id, 'pack', pack_type, quantity)
         return True
     
-    async def remove_packs(self, conn, user_id: int, pack_type: str, quantity: int) -> bool:
+    async def remove_packs(self, conn, user_id: int, deck_id: int, pack_type: str, quantity: int) -> bool:
         """Remove packs from user inventory. Returns False if insufficient packs."""
-        current_qty = await self.get_pack_quantity(conn, user_id, pack_type)
-        
-        if current_qty < quantity:
-            return False
-        
-        new_qty = current_qty - quantity
-        
-        if new_qty == 0:
-            # Delete row if quantity reaches 0
-            await conn.execute(
-                "DELETE FROM user_packs WHERE user_id = $1 AND pack_type = $2",
-                user_id, pack_type
-            )
-        else:
-            # Update quantity
-            await conn.execute(
-                "UPDATE user_packs SET quantity = $3 WHERE user_id = $1 AND pack_type = $2",
-                user_id, pack_type, new_qty
-            )
-        
-        return True
+        success, _ = await remove_inventory_item(conn, user_id, deck_id, 'pack', pack_type, quantity)
+        return success
     
     @commands.hybrid_command(name='claimfreepack', description="Claim a free Normal Pack (cooldown varies by deck)")
     async def claim_free_pack(self, ctx):
@@ -210,7 +180,7 @@ class PackCommands(commands.Cog):
                 return
             
             # Check pack cap
-            total_packs = await self.get_total_packs(conn, user_id)
+            total_packs = await self.get_total_packs(conn, user_id, deck_id)
             
             if total_packs >= MAX_TOTAL_PACKS:
                 await ctx.send(
@@ -220,7 +190,7 @@ class PackCommands(commands.Cog):
                 return
             
             # Add 1 Normal Pack
-            success = await self.add_packs(conn, user_id, 'Normal Pack', 1)
+            success = await self.add_packs(conn, user_id, deck_id, 'Normal Pack', 1)
             
             if not success:
                 await ctx.send(f"❌ Cannot claim pack - you would exceed the {MAX_TOTAL_PACKS} pack limit!")
@@ -246,40 +216,48 @@ class PackCommands(commands.Cog):
             
             await ctx.send(embed=embed)
     
-    @commands.hybrid_command(name='mypacks', description="View your pack inventory")
+    @commands.hybrid_command(name='mypacks', description="View your pack inventory for this server's deck")
     async def my_packs(self, ctx):
         """
-        View your pack inventory.
+        View your pack inventory for this server's deck.
         Usage: /mypacks
         """
-        # Defer if invoked as slash command to avoid timeout
         if ctx.interaction:
             await ctx.defer()
         
         user_id = ctx.author.id
+        guild_id = ctx.guild.id if ctx.guild else None
+        
+        if not guild_id:
+            await ctx.send("❌ This command must be used in a server!")
+            return
+        
+        deck = await self.bot.get_server_deck(guild_id)
+        if not deck:
+            await ctx.send("❌ No deck assigned to this server!")
+            return
+        
+        deck_id = deck['deck_id']
         
         async with self.db_pool.acquire() as conn:
-            packs = await conn.fetch(
-                "SELECT pack_type, quantity FROM user_packs WHERE user_id = $1 ORDER BY pack_type",
-                user_id
-            )
-            
-            total = await self.get_total_packs(conn, user_id)
+            packs = await get_inventory_by_type(conn, user_id, deck_id, 'pack')
+            total = await self.get_total_packs(conn, user_id, deck_id)
             
             embed = discord.Embed(
                 title=f"📦 {ctx.author.display_name}'s Pack Inventory",
+                description=f"**Deck:** {deck['name']}",
                 color=discord.Color.blue()
             )
             
             if not packs:
-                embed.description = "You don't have any packs yet!\nUse `/claimfreepack` to get a free Normal Pack every 8 hours."
+                embed.add_field(
+                    name="Packs",
+                    value="You don't have any packs yet!\nUse `/claimfreepack` to get a free Normal Pack.",
+                    inline=False
+                )
             else:
                 pack_list = []
-                for pack in packs:
-                    pack_type = pack['pack_type']
-                    qty = pack['quantity']
-                    
-                    # Add emoji based on pack type
+                for pack_type, qty in packs:
                     if 'Normal' in pack_type:
                         emoji = "📦"
                     elif 'Booster Pack+' in pack_type:
@@ -291,7 +269,11 @@ class PackCommands(commands.Cog):
                     
                     pack_list.append(f"{emoji} **{pack_type}**: {qty}")
                 
-                embed.description = "\n".join(pack_list)
+                embed.add_field(
+                    name="Packs",
+                    value="\n".join(pack_list),
+                    inline=False
+                )
             
             embed.add_field(
                 name="Total Packs",
@@ -362,7 +344,7 @@ class PackCommands(commands.Cog):
                 return
             
             # Check pack cap
-            total_packs = await self.get_total_packs(conn, user_id)
+            total_packs = await self.get_total_packs(conn, user_id, deck_id)
             
             if total_packs + amount > MAX_TOTAL_PACKS:
                 available_space = MAX_TOTAL_PACKS - total_packs
@@ -378,14 +360,8 @@ class PackCommands(commands.Cog):
                 # Deduct credits from deck-specific balance
                 new_credits = await update_player_credits(conn, user_id, deck_id, -total_cost)
                 
-                # Add packs
-                await conn.execute(
-                    """INSERT INTO user_packs (user_id, pack_type, quantity)
-                       VALUES ($1, $2, $3)
-                       ON CONFLICT (user_id, pack_type)
-                       DO UPDATE SET quantity = user_packs.quantity + $3""",
-                    user_id, pack_type, amount
-                )
+                # Add packs to deck-specific inventory
+                await add_inventory_item(conn, user_id, deck_id, 'pack', pack_type, amount)
             new_pack_total = total_packs + amount
             
             # Send confirmation

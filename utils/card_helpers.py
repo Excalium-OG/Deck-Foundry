@@ -207,6 +207,126 @@ def validate_image_attachment(message: discord.Message) -> Optional[str]:
     
     return attachment.url
 
+async def get_inventory_item(conn, user_id: int, deck_id: int, item_type: str, item_key: str) -> int:
+    """
+    Get the quantity of an item in user's inventory.
+    
+    Args:
+        conn: Database connection
+        user_id: Discord user ID
+        deck_id: Deck ID
+        item_type: Item type (e.g., 'pack')
+        item_key: Item key (e.g., 'Normal Pack')
+        
+    Returns:
+        Item quantity (0 if not found)
+    """
+    result = await conn.fetchval(
+        """SELECT quantity FROM user_inventory
+           WHERE user_id = $1 AND deck_id = $2 AND item_type = $3 AND item_key = $4""",
+        user_id, deck_id, item_type, item_key
+    )
+    return result or 0
+
+
+async def add_inventory_item(conn, user_id: int, deck_id: int, item_type: str, item_key: str, quantity: int = 1) -> int:
+    """
+    Add items to user's inventory.
+    
+    Args:
+        conn: Database connection
+        user_id: Discord user ID
+        deck_id: Deck ID
+        item_type: Item type (e.g., 'pack')
+        item_key: Item key (e.g., 'Normal Pack')
+        quantity: Amount to add
+        
+    Returns:
+        New quantity
+    """
+    result = await conn.fetchrow(
+        """INSERT INTO user_inventory (user_id, deck_id, item_type, item_key, quantity)
+           VALUES ($1, $2, $3, $4, $5)
+           ON CONFLICT (user_id, deck_id, item_type, item_key)
+           DO UPDATE SET quantity = user_inventory.quantity + $5, updated_at = NOW()
+           RETURNING quantity""",
+        user_id, deck_id, item_type, item_key, quantity
+    )
+    return result['quantity']
+
+
+async def remove_inventory_item(conn, user_id: int, deck_id: int, item_type: str, item_key: str, quantity: int = 1) -> Tuple[bool, int]:
+    """
+    Remove items from user's inventory.
+    
+    Args:
+        conn: Database connection
+        user_id: Discord user ID
+        deck_id: Deck ID
+        item_type: Item type (e.g., 'pack')
+        item_key: Item key (e.g., 'Normal Pack')
+        quantity: Amount to remove
+        
+    Returns:
+        Tuple of (success, remaining_quantity)
+    """
+    current = await get_inventory_item(conn, user_id, deck_id, item_type, item_key)
+    if current < quantity:
+        return False, current
+    
+    result = await conn.fetchrow(
+        """UPDATE user_inventory 
+           SET quantity = quantity - $5, updated_at = NOW()
+           WHERE user_id = $1 AND deck_id = $2 AND item_type = $3 AND item_key = $4
+           RETURNING quantity""",
+        user_id, deck_id, item_type, item_key, quantity
+    )
+    return True, result['quantity'] if result else 0
+
+
+async def get_inventory_by_type(conn, user_id: int, deck_id: int, item_type: str) -> list:
+    """
+    Get all items of a specific type from user's inventory.
+    
+    Args:
+        conn: Database connection
+        user_id: Discord user ID
+        deck_id: Deck ID
+        item_type: Item type (e.g., 'pack')
+        
+    Returns:
+        List of (item_key, quantity) tuples
+    """
+    rows = await conn.fetch(
+        """SELECT item_key, quantity FROM user_inventory
+           WHERE user_id = $1 AND deck_id = $2 AND item_type = $3 AND quantity > 0
+           ORDER BY item_key""",
+        user_id, deck_id, item_type
+    )
+    return [(row['item_key'], row['quantity']) for row in rows]
+
+
+async def get_total_items_by_type(conn, user_id: int, deck_id: int, item_type: str) -> int:
+    """
+    Get total count of items of a specific type.
+    
+    Args:
+        conn: Database connection
+        user_id: Discord user ID
+        deck_id: Deck ID
+        item_type: Item type (e.g., 'pack')
+        
+    Returns:
+        Total quantity across all item keys of that type
+    """
+    result = await conn.fetchval(
+        """SELECT COALESCE(SUM(quantity), 0) FROM user_inventory
+           WHERE user_id = $1 AND deck_id = $2 AND item_type = $3""",
+        user_id, deck_id, item_type
+    )
+    return result or 0
+
+
 def create_card_embed(card_data: dict, instance_id: Optional[str] = None) -> discord.Embed:
     """
     Create a Discord embed for displaying card information.
