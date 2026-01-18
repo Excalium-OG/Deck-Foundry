@@ -62,6 +62,75 @@ async def update_player_credits(conn, user_id: int, deck_id: int, amount: int) -
     return result['credits']
 
 
+async def update_player_mission_points(conn, user_id: int, deck_id: int, amount: int) -> int:
+    """
+    Add or subtract mission points (MP) for a player in a specific deck.
+    
+    Args:
+        conn: Database connection
+        user_id: Discord user ID
+        deck_id: Deck ID
+        amount: MP to add (positive) or subtract (negative)
+        
+    Returns:
+        New MP balance
+    """
+    result = await conn.fetchrow(
+        """INSERT INTO player_deck_state (user_id, deck_id, credits, mission_points, last_drop_ts)
+           VALUES ($1, $2, 0, GREATEST(0, $3), NULL)
+           ON CONFLICT (user_id, deck_id) 
+           DO UPDATE SET mission_points = GREATEST(0, COALESCE(player_deck_state.mission_points, 0) + $3),
+                         updated_at = NOW()
+           RETURNING mission_points""",
+        user_id, deck_id, amount
+    )
+    return result['mission_points']
+
+
+async def reset_deck_mission_points(conn, deck_id: int) -> int:
+    """
+    Reset all mission points to 0 for a specific deck.
+    
+    Args:
+        conn: Database connection
+        deck_id: Deck ID
+        
+    Returns:
+        Number of players reset
+    """
+    result = await conn.execute(
+        """UPDATE player_deck_state 
+           SET mission_points = 0, updated_at = NOW()
+           WHERE deck_id = $1 AND mission_points > 0""",
+        deck_id
+    )
+    count = int(result.split()[-1]) if result else 0
+    return count
+
+
+async def get_mp_leaderboard(conn, deck_id: int, limit: int = 10) -> list:
+    """
+    Get the top players by mission points for a deck.
+    
+    Args:
+        conn: Database connection
+        deck_id: Deck ID
+        limit: Max number of players to return
+        
+    Returns:
+        List of (user_id, mission_points) tuples
+    """
+    rows = await conn.fetch(
+        """SELECT user_id, COALESCE(mission_points, 0) as mission_points
+           FROM player_deck_state
+           WHERE deck_id = $1 AND COALESCE(mission_points, 0) > 0
+           ORDER BY mission_points DESC
+           LIMIT $2""",
+        deck_id, limit
+    )
+    return rows
+
+
 async def update_player_drop_ts(conn, user_id: int, deck_id: int, timestamp: Optional[datetime] = None) -> None:
     """
     Update the last drop timestamp for a player in a specific deck.

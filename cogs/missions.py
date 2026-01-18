@@ -7,7 +7,14 @@ from datetime import datetime, timezone, timedelta
 from typing import Optional, Dict, List
 import math
 
-from utils.card_helpers import get_player_deck_state, update_player_credits
+from utils.card_helpers import (
+    get_player_deck_state, 
+    update_player_credits,
+    update_player_mission_points,
+    get_mp_leaderboard,
+    reset_deck_mission_points,
+    add_inventory_item
+)
 
 RARITY_HIERARCHY = ['Common', 'Uncommon', 'Exceptional', 'Rare', 'Epic', 'Legendary', 'Mythic']
 
@@ -838,8 +845,10 @@ class MissionCommands(commands.Cog):
                         credit_bonus = int(credits_earned * merge_level * 0.05)
                         total_credits = credits_earned + credit_bonus
                         
-                        # Award credits to deck-specific balance
+                        mission_points = int(total_credits * 0.10)
+                        
                         await update_player_credits(conn, mission['accepted_by'], mission['deck_id'], total_credits)
+                        await update_player_mission_points(conn, mission['accepted_by'], mission['deck_id'], mission_points)
                         
                         await conn.execute(
                             """UPDATE active_missions 
@@ -863,8 +872,8 @@ class MissionCommands(commands.Cog):
                                 bonus_text = f" (+{credit_bonus:,} merge bonus)" if credit_bonus > 0 else ""
                                 await user.send(
                                     f"🎉 Your mission, **{mission['template_name']}** [{mission['rarity_rolled']}], "
-                                    f"has completed in **{guild_name}**. It was successful, and you have gained "
-                                    f"**{total_credits:,}** credits!{bonus_text}"
+                                    f"has completed in **{guild_name}**. You gained "
+                                    f"**{total_credits:,}** credits{bonus_text} and **{mission_points:,}** MP!"
                                 )
                         except Exception as e:
                             print(f"Failed to send mission success DM: {e}")
@@ -1023,6 +1032,149 @@ class MissionCommands(commands.Cog):
                 f"The lifecycle loop runs every 5 minutes, so check back shortly or wait for the DM!"
             )
 
+    @app_commands.command(name="leaderboard", description="View the top 10 players by Mission Points (MP)")
+    async def leaderboard(self, interaction: discord.Interaction):
+        """Display MP leaderboard for the current deck"""
+        await interaction.response.defer()
+        
+        guild_id = interaction.guild_id
+        if not guild_id:
+            await interaction.followup.send("This command must be used in a server!")
+            return
+        
+        async with self.db_pool.acquire() as conn:
+            deck = await conn.fetchrow(
+                """SELECT d.deck_id, d.name FROM server_decks sd
+                   JOIN decks d ON sd.deck_id = d.deck_id
+                   WHERE sd.guild_id = $1""",
+                guild_id
+            )
+            
+            if not deck:
+                await interaction.followup.send("No deck is set for this server!")
+                return
+            
+            leaders = await get_mp_leaderboard(conn, deck['deck_id'], 10)
+        
+        if not leaders:
+            embed = discord.Embed(
+                title=f"🏆 {deck['name']} Leaderboard",
+                description="No players have earned Mission Points yet!\n\nComplete missions to earn MP and climb the leaderboard.",
+                color=discord.Color.gold()
+            )
+        else:
+            leaderboard_text = []
+            medals = ['🥇', '🥈', '🥉']
+            
+            for i, row in enumerate(leaders):
+                rank_display = medals[i] if i < 3 else f"**{i+1}.**"
+                try:
+                    user = await self.bot.fetch_user(row['user_id'])
+                    name = user.display_name
+                except:
+                    name = f"User {row['user_id']}"
+                
+                leaderboard_text.append(f"{rank_display} {name} — **{row['mission_points']:,}** MP")
+            
+            embed = discord.Embed(
+                title=f"🏆 {deck['name']} Leaderboard",
+                description="\n".join(leaderboard_text),
+                color=discord.Color.gold()
+            )
+            embed.set_footer(text="Complete missions to earn MP! Rewards at month end.")
+        
+        await interaction.followup.send(embed=embed)
+
+    @tasks.loop(hours=1)
+    async def monthly_reset_loop(self):
+        """Check for monthly reset and distribute rewards"""
+        try:
+            await self.check_and_process_monthly_reset()
+        except Exception as e:
+            print(f"Monthly reset loop error: {e}")
+
+    @monthly_reset_loop.before_loop
+    async def before_monthly_reset(self):
+        await self.bot.wait_until_ready()
+
+    async def check_and_process_monthly_reset(self):
+        """Check if it's time for monthly reset and process rewards"""
+        now = datetime.now(timezone.utc)
+        
+        if now.day != 1 or now.hour != 0:
+            return
+        
+        last_month = now - timedelta(days=1)
+        month_year = last_month.strftime('%Y-%m')
+        
+        async with self.db_pool.acquire() as conn:
+            decks = await conn.fetch("SELECT deck_id, name FROM decks")
+            
+            for deck in decks:
+                deck_id = deck['deck_id']
+                
+                already_processed = await conn.fetchval(
+                    """SELECT 1 FROM monthly_rewards_log 
+                       WHERE deck_id = $1 AND month_year = $2""",
+                    deck_id, month_year
+                )
+                
+                if already_processed:
+                    continue
+                
+                leaders = await get_mp_leaderboard(conn, deck_id, 3)
+                
+                first_user = second_user = third_user = None
+                first_mp = second_mp = third_mp = 0
+                
+                if len(leaders) >= 1:
+                    first_user = leaders[0]['user_id']
+                    first_mp = leaders[0]['mission_points']
+                    await add_inventory_item(conn, first_user, deck_id, 'pack', 'Elite Pack', 3)
+                
+                if len(leaders) >= 2:
+                    second_user = leaders[1]['user_id']
+                    second_mp = leaders[1]['mission_points']
+                    await add_inventory_item(conn, second_user, deck_id, 'pack', 'Elite Pack', 1)
+                
+                if len(leaders) >= 3:
+                    third_user = leaders[2]['user_id']
+                    third_mp = leaders[2]['mission_points']
+                    await add_inventory_item(conn, third_user, deck_id, 'pack', 'Booster Pack+', 2)
+                
+                await conn.execute(
+                    """INSERT INTO monthly_rewards_log 
+                       (deck_id, month_year, first_place_user_id, first_place_mp,
+                        second_place_user_id, second_place_mp, third_place_user_id, third_place_mp)
+                       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)""",
+                    deck_id, month_year, first_user, first_mp, second_user, second_mp, third_user, third_mp
+                )
+                
+                await reset_deck_mission_points(conn, deck_id)
+                
+                for i, leader in enumerate(leaders):
+                    try:
+                        user = await self.bot.fetch_user(leader['user_id'])
+                        if user:
+                            if i == 0:
+                                reward_text = "**3 Elite Packs**"
+                            elif i == 1:
+                                reward_text = "**1 Elite Pack**"
+                            else:
+                                reward_text = "**2 Booster+ Packs**"
+                            
+                            await user.send(
+                                f"🏆 Congratulations! You placed **#{i+1}** on the **{deck['name']}** "
+                                f"leaderboard for {last_month.strftime('%B %Y')}!\n\n"
+                                f"You earned {reward_text} as your reward. Your MP has been reset for the new month."
+                            )
+                    except Exception as e:
+                        print(f"Failed to send monthly reward DM: {e}")
+                
+                print(f"Processed monthly reset for deck {deck['name']} ({deck_id})")
+
 
 async def setup(bot):
-    await bot.add_cog(MissionCommands(bot))
+    cog = MissionCommands(bot)
+    cog.monthly_reset_loop.start()
+    await bot.add_cog(cog)
