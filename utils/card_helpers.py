@@ -2,8 +2,155 @@
 Utility functions for DeckForge card management
 """
 from datetime import datetime, timedelta, timezone
-from typing import Optional
+from typing import Optional, Tuple
 import discord
+
+
+async def get_player_deck_state(conn, user_id: int, deck_id: int) -> dict:
+    """
+    Get or create player deck state (credits and cooldown per deck).
+    
+    Args:
+        conn: Database connection
+        user_id: Discord user ID
+        deck_id: Deck ID
+        
+    Returns:
+        Dict with credits and last_drop_ts
+    """
+    state = await conn.fetchrow(
+        """SELECT credits, last_drop_ts FROM player_deck_state 
+           WHERE user_id = $1 AND deck_id = $2""",
+        user_id, deck_id
+    )
+    
+    if state:
+        return dict(state)
+    
+    await conn.execute(
+        """INSERT INTO player_deck_state (user_id, deck_id, credits, last_drop_ts)
+           VALUES ($1, $2, 0, NULL)
+           ON CONFLICT (user_id, deck_id) DO NOTHING""",
+        user_id, deck_id
+    )
+    
+    return {'credits': 0, 'last_drop_ts': None}
+
+
+async def update_player_credits(conn, user_id: int, deck_id: int, amount: int) -> int:
+    """
+    Add or subtract credits for a player in a specific deck.
+    
+    Args:
+        conn: Database connection
+        user_id: Discord user ID
+        deck_id: Deck ID
+        amount: Credits to add (positive) or subtract (negative)
+        
+    Returns:
+        New credit balance
+    """
+    result = await conn.fetchrow(
+        """INSERT INTO player_deck_state (user_id, deck_id, credits, last_drop_ts)
+           VALUES ($1, $2, GREATEST(0, $3), NULL)
+           ON CONFLICT (user_id, deck_id) 
+           DO UPDATE SET credits = GREATEST(0, player_deck_state.credits + $3),
+                         updated_at = NOW()
+           RETURNING credits""",
+        user_id, deck_id, amount
+    )
+    return result['credits']
+
+
+async def update_player_mission_points(conn, user_id: int, deck_id: int, amount: int) -> int:
+    """
+    Add or subtract mission points (MP) for a player in a specific deck.
+    
+    Args:
+        conn: Database connection
+        user_id: Discord user ID
+        deck_id: Deck ID
+        amount: MP to add (positive) or subtract (negative)
+        
+    Returns:
+        New MP balance
+    """
+    result = await conn.fetchrow(
+        """INSERT INTO player_deck_state (user_id, deck_id, credits, mission_points, last_drop_ts)
+           VALUES ($1, $2, 0, GREATEST(0, $3), NULL)
+           ON CONFLICT (user_id, deck_id) 
+           DO UPDATE SET mission_points = GREATEST(0, COALESCE(player_deck_state.mission_points, 0) + $3),
+                         updated_at = NOW()
+           RETURNING mission_points""",
+        user_id, deck_id, amount
+    )
+    return result['mission_points']
+
+
+async def reset_deck_mission_points(conn, deck_id: int) -> int:
+    """
+    Reset all mission points to 0 for a specific deck.
+    
+    Args:
+        conn: Database connection
+        deck_id: Deck ID
+        
+    Returns:
+        Number of players reset
+    """
+    result = await conn.execute(
+        """UPDATE player_deck_state 
+           SET mission_points = 0, updated_at = NOW()
+           WHERE deck_id = $1 AND mission_points > 0""",
+        deck_id
+    )
+    count = int(result.split()[-1]) if result else 0
+    return count
+
+
+async def get_mp_leaderboard(conn, deck_id: int, limit: int = 10) -> list:
+    """
+    Get the top players by mission points for a deck.
+    
+    Args:
+        conn: Database connection
+        deck_id: Deck ID
+        limit: Max number of players to return
+        
+    Returns:
+        List of (user_id, mission_points) tuples
+    """
+    rows = await conn.fetch(
+        """SELECT user_id, COALESCE(mission_points, 0) as mission_points
+           FROM player_deck_state
+           WHERE deck_id = $1 AND COALESCE(mission_points, 0) > 0
+           ORDER BY mission_points DESC
+           LIMIT $2""",
+        deck_id, limit
+    )
+    return rows
+
+
+async def update_player_drop_ts(conn, user_id: int, deck_id: int, timestamp: Optional[datetime] = None) -> None:
+    """
+    Update the last drop timestamp for a player in a specific deck.
+    
+    Args:
+        conn: Database connection
+        user_id: Discord user ID
+        deck_id: Deck ID
+        timestamp: Timestamp to set (defaults to now)
+    """
+    if timestamp is None:
+        timestamp = datetime.now(timezone.utc)
+    
+    await conn.execute(
+        """INSERT INTO player_deck_state (user_id, deck_id, credits, last_drop_ts)
+           VALUES ($1, $2, 0, $3)
+           ON CONFLICT (user_id, deck_id) 
+           DO UPDATE SET last_drop_ts = $3, updated_at = NOW()""",
+        user_id, deck_id, timestamp
+    )
 
 # Rarity hierarchy (ascending order: Common -> Mythic)
 RARITY_HIERARCHY = [
@@ -17,6 +164,16 @@ RARITY_HIERARCHY = [
 ]
 
 RARITY_ORDER = {rarity: index for index, rarity in enumerate(RARITY_HIERARCHY)}
+
+RARITY_COLORS = {
+    'Common': discord.Color.light_gray(),
+    'Uncommon': discord.Color.green(),
+    'Exceptional': discord.Color.blue(),
+    'Rare': discord.Color.purple(),
+    'Epic': discord.Color.magenta(),
+    'Legendary': discord.Color.orange(),
+    'Mythic': discord.Color.gold()
+}
 
 def validate_rarity(rarity: str) -> bool:
     """
@@ -129,6 +286,126 @@ def validate_image_attachment(message: discord.Message) -> Optional[str]:
     
     return attachment.url
 
+async def get_inventory_item(conn, user_id: int, deck_id: int, item_type: str, item_key: str) -> int:
+    """
+    Get the quantity of an item in user's inventory.
+    
+    Args:
+        conn: Database connection
+        user_id: Discord user ID
+        deck_id: Deck ID
+        item_type: Item type (e.g., 'pack')
+        item_key: Item key (e.g., 'Normal Pack')
+        
+    Returns:
+        Item quantity (0 if not found)
+    """
+    result = await conn.fetchval(
+        """SELECT quantity FROM user_inventory
+           WHERE user_id = $1 AND deck_id = $2 AND item_type = $3 AND item_key = $4""",
+        user_id, deck_id, item_type, item_key
+    )
+    return result or 0
+
+
+async def add_inventory_item(conn, user_id: int, deck_id: int, item_type: str, item_key: str, quantity: int = 1) -> int:
+    """
+    Add items to user's inventory.
+    
+    Args:
+        conn: Database connection
+        user_id: Discord user ID
+        deck_id: Deck ID
+        item_type: Item type (e.g., 'pack')
+        item_key: Item key (e.g., 'Normal Pack')
+        quantity: Amount to add
+        
+    Returns:
+        New quantity
+    """
+    result = await conn.fetchrow(
+        """INSERT INTO user_inventory (user_id, deck_id, item_type, item_key, quantity)
+           VALUES ($1, $2, $3, $4, $5)
+           ON CONFLICT (user_id, deck_id, item_type, item_key)
+           DO UPDATE SET quantity = user_inventory.quantity + $5, updated_at = NOW()
+           RETURNING quantity""",
+        user_id, deck_id, item_type, item_key, quantity
+    )
+    return result['quantity']
+
+
+async def remove_inventory_item(conn, user_id: int, deck_id: int, item_type: str, item_key: str, quantity: int = 1) -> Tuple[bool, int]:
+    """
+    Remove items from user's inventory.
+    
+    Args:
+        conn: Database connection
+        user_id: Discord user ID
+        deck_id: Deck ID
+        item_type: Item type (e.g., 'pack')
+        item_key: Item key (e.g., 'Normal Pack')
+        quantity: Amount to remove
+        
+    Returns:
+        Tuple of (success, remaining_quantity)
+    """
+    current = await get_inventory_item(conn, user_id, deck_id, item_type, item_key)
+    if current < quantity:
+        return False, current
+    
+    result = await conn.fetchrow(
+        """UPDATE user_inventory 
+           SET quantity = quantity - $5, updated_at = NOW()
+           WHERE user_id = $1 AND deck_id = $2 AND item_type = $3 AND item_key = $4
+           RETURNING quantity""",
+        user_id, deck_id, item_type, item_key, quantity
+    )
+    return True, result['quantity'] if result else 0
+
+
+async def get_inventory_by_type(conn, user_id: int, deck_id: int, item_type: str) -> list:
+    """
+    Get all items of a specific type from user's inventory.
+    
+    Args:
+        conn: Database connection
+        user_id: Discord user ID
+        deck_id: Deck ID
+        item_type: Item type (e.g., 'pack')
+        
+    Returns:
+        List of (item_key, quantity) tuples
+    """
+    rows = await conn.fetch(
+        """SELECT item_key, quantity FROM user_inventory
+           WHERE user_id = $1 AND deck_id = $2 AND item_type = $3 AND quantity > 0
+           ORDER BY item_key""",
+        user_id, deck_id, item_type
+    )
+    return [(row['item_key'], row['quantity']) for row in rows]
+
+
+async def get_total_items_by_type(conn, user_id: int, deck_id: int, item_type: str) -> int:
+    """
+    Get total count of items of a specific type.
+    
+    Args:
+        conn: Database connection
+        user_id: Discord user ID
+        deck_id: Deck ID
+        item_type: Item type (e.g., 'pack')
+        
+    Returns:
+        Total quantity across all item keys of that type
+    """
+    result = await conn.fetchval(
+        """SELECT COALESCE(SUM(quantity), 0) FROM user_inventory
+           WHERE user_id = $1 AND deck_id = $2 AND item_type = $3""",
+        user_id, deck_id, item_type
+    )
+    return result or 0
+
+
 def create_card_embed(card_data: dict, instance_id: Optional[str] = None) -> discord.Embed:
     """
     Create a Discord embed for displaying card information.
@@ -141,19 +418,7 @@ def create_card_embed(card_data: dict, instance_id: Optional[str] = None) -> dis
         Discord Embed object
     """
     rarity = card_data.get('rarity', 'Unknown')
-    
-    # Color coding by rarity
-    rarity_colors = {
-        'Common': discord.Color.light_gray(),
-        'Uncommon': discord.Color.green(),
-        'Exceptional': discord.Color.blue(),
-        'Rare': discord.Color.purple(),
-        'Epic': discord.Color.magenta(),
-        'Legendary': discord.Color.orange(),
-        'Mythic': discord.Color.gold()
-    }
-    
-    color = rarity_colors.get(rarity, discord.Color.default())
+    color = RARITY_COLORS.get(rarity, discord.Color.default())
     
     embed = discord.Embed(
         title=card_data.get('name', 'Unknown Card'),

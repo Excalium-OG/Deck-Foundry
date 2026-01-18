@@ -1,0 +1,67 @@
+Task: Update the DeckForge mission system to introduce Mission Points (MP), a monthly leaderboard, and a new pack type called Elite Packs.
+
+1. Add Mission Points (MP) as a New Reward Type
+Implement the following changes:
+Mission Completion Reward Update
+- When a player successfully completes a mission, reward them with:
+- The existing credit reward
+- MP equal to 10% of the credit reward
+- Example: If a mission gives 500 credits, the player receives 50 MP.
+Data Model Changes
+- Add a new MP field to the player profile for each deck.
+- MP must be tracked per deck, not globally.
+
+2. Implement a Deck-Specific MP Leaderboard
+Create a new command:
+/leaderboard
+- Shows the top 10 players for the current deck, sorted by MP descending.
+- If fewer than 10 players exist, show all available players.
+- Display format should include:
+- Rank
+- Player name
+- Current MP
+Leaderboard Storage
+- Leaderboard is derived from each player’s MP value.
+- No separate leaderboard table is required unless needed for performance.
+
+3. Monthly Leaderboard Rewards
+At the end of each calendar month:
+Reward Distribution
+- 1st place: 3 Elite Packs
+- 2nd place: 1 Elite Pack
+- 3rd place: 2 Booster+ Packs
+- Replit already knows what Booster+ packs are.
+Reset Logic
+- After distributing rewards, reset all players’ MP for that deck back to 0.
+- Ensure this reset does not affect other deck data.
+Automation
+- Add a scheduled monthly task (cron or equivalent) to:
+- Compute rankings
+- Distribute rewards
+- Reset MP
+
+4. Add New Pack Type: Elite Packs
+Introduce a new pack type called Elite Pack with the following properties:
+Elite Pack Rules
+- Rarity floor: Exceptional
+- Card count: 5 cards per pack
+- Rarity distribution adjustment:
+- Take the percentage normally allocated to Common and Uncommon rarities.
+- Redistribute that percentage proportionally across all rarities above Uncommon.
+- This ensures:
+- No Common or Uncommon cards appear
+- Higher rarities become more likely
+- The original rarity curve remains proportional
+Implementation Notes
+- Add Elite Packs to the pack-opening system.
+- Ensure they can be granted as rewards and opened like other packs.
+- Ensure rarity logic respects the new floor and redistribution rules.
+
+5. Deliverables
+Update the codebase to include:
+- MP reward logic in mission completion
+- MP storage in player profiles
+- /leaderboard command implementation
+- Monthly reward distribution and MP reset
+- Elite Pack definition and rarity logic
+- Integration of Elite Packs into reward and pack-opening systems

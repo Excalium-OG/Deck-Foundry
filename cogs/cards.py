@@ -18,7 +18,11 @@ from utils.card_helpers import (
     format_cooldown_time,
     validate_image_attachment,
     create_card_embed,
-    RARITY_HIERARCHY
+    RARITY_HIERARCHY,
+    update_player_credits,
+    get_inventory_item,
+    add_inventory_item,
+    remove_inventory_item
 )
 from utils.merge_helpers import format_merge_level_display
 
@@ -40,7 +44,8 @@ from utils.drop_helpers import (
 from utils.pack_logic import (
     validate_pack_type,
     format_pack_type,
-    apply_pack_modifier
+    apply_pack_modifier,
+    get_pack_card_count
 )
 
 
@@ -120,32 +125,22 @@ class CardCommands(commands.Cog):
             return
         
         async with self.db_pool.acquire() as conn:
-            # Check if user has enough packs
-            current_qty = await conn.fetchval(
-                "SELECT quantity FROM user_packs WHERE user_id = $1 AND pack_type = $2",
-                user_id, pack_type
-            )
+            # Check if user has enough packs (deck-specific)
+            current_qty = await get_inventory_item(conn, user_id, deck_id, 'pack', pack_type)
             
-            if not current_qty or current_qty < amount:
+            if current_qty < amount:
                 await ctx.send(
                     f"❌ You don't have enough **{pack_type}**s!\n"
-                    f"You have: **{current_qty or 0}**, need: **{amount}**\n"
+                    f"You have: **{current_qty}**, need: **{amount}**\n"
                     f"Use `/mypacks` to see your inventory or `/claimfreepack` for a free pack."
                 )
                 return
             
-            # Remove packs from inventory
-            new_qty = current_qty - amount
-            if new_qty == 0:
-                await conn.execute(
-                    "DELETE FROM user_packs WHERE user_id = $1 AND pack_type = $2",
-                    user_id, pack_type
-                )
-            else:
-                await conn.execute(
-                    "UPDATE user_packs SET quantity = $3 WHERE user_id = $1 AND pack_type = $2",
-                    user_id, pack_type, new_qty
-                )
+            # Remove packs from deck-specific inventory
+            success, new_qty = await remove_inventory_item(conn, user_id, deck_id, 'pack', pack_type, amount)
+            if not success:
+                await ctx.send(f"❌ Failed to open packs - insufficient quantity!")
+                return
             
             # Get all available cards from the assigned deck
             all_cards = await conn.fetch(
@@ -154,14 +149,8 @@ class CardCommands(commands.Cog):
             )
             
             if len(all_cards) == 0:
-                # Refund packs
-                await conn.execute(
-                    """INSERT INTO user_packs (user_id, pack_type, quantity)
-                       VALUES ($1, $2, $3)
-                       ON CONFLICT (user_id, pack_type)
-                       DO UPDATE SET quantity = user_packs.quantity + $3""",
-                    user_id, pack_type, amount
-                )
+                # Refund packs to deck-specific inventory
+                await add_inventory_item(conn, user_id, deck_id, 'pack', pack_type, amount)
                 await ctx.send(f"❌ No cards in the **{deck['name']}** deck! Contact the deck creator to add cards via the web portal.")
                 return
             
@@ -179,9 +168,10 @@ class CardCommands(commands.Cog):
             # Apply pack modifier to get modified drop rates
             drop_rates = apply_pack_modifier(base_rates, pack_type)
             
-            # Open packs (2 cards per pack)
+            cards_per_pack = get_pack_card_count(pack_type)
+            
             dropped_cards = []
-            for _ in range(amount * 2):
+            for _ in range(amount * cards_per_pack):
                 # Select rarity based on modified weights
                 selected_rarity = select_rarity_by_weight(drop_rates)
                 
@@ -543,14 +533,8 @@ class CardCommands(commands.Cog):
                     instance_ids
                 )
                 
-                # Credit user
-                await conn.execute(
-                    """INSERT INTO players (user_id, credits)
-                       VALUES ($1, $2)
-                       ON CONFLICT (user_id)
-                       DO UPDATE SET credits = players.credits + $2""",
-                    user_id, total_credits
-                )
+                # Credit user (per-deck credits)
+                await update_player_credits(conn, user_id, deck_id, total_credits)
         
         # Confirmation
         merge_display = format_merge_level_display(merge_level)

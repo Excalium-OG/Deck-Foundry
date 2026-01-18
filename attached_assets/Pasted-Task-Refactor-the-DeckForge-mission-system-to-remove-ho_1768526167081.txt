@@ -1,0 +1,55 @@
+Task: Refactor the DeckForge mission system to remove hourly mission spawning and replace it with a deck‑specific mission board accessible via /missionboard.
+Requirements
+1. Remove Hourly Mission Spawning
+- Delete all logic related to hourly mission generation.
+- Remove any scheduled tasks, timers, or cron-like systems that spawn missions automatically.
+2. Make Missions Deck‑Specific (Not Server‑Specific)
+- Missions should now be tied to a deck ID, not a guild/server ID.
+- All servers that have adopted the same deck should see the same mission board.
+- Update database schemas, queries, and mission generation logic accordingly.
+3. Implement /missionboard Command
+- Create a new command /missionboard.
+- When executed, it should:
+- Display 3 missions to the player.
+- These 3 missions are the “active” visible missions.
+- Maintain an invisible backlog of 7 additional missions (total of 10).
+- Missions should be ordered by rarity (descending).
+- Every 30 minutes, automatically generate new missions to backfill the backlog until it reaches the full 10‑mission capacity.
+4. Mission Selection via Reactions
+- The bot should pre‑react with 1️⃣ 2️⃣ 3️⃣ to the mission board message.
+- When a user reacts with one of these numbers:
+- Identify which mission slot they selected.
+- Attempt to assign that mission to the user.
+5. Mission Acceptance Logic
+- After a mission is accepted:
+- Add it to the user’s mission inventory.
+- It should appear in /mymissions exactly like current missions do.
+- Remove the accepted mission from the visible 3‑slot board.
+- Replace it with the next mission from the backlog.
+- Generate a new mission to refill the backlog back to 7.
+6. Player Mission Slot Limit
+- Each player has a maximum of 3 active missions.
+- Before accepting a mission:
+- Check if the player has fewer than 3 active missions.
+- If they have 3 already:
+- Reject the acceptance.
+- Send a message:
+“You don’t have enough mission slots available to accept this mission.”
+7. Data Model Adjustments
+- Add or update tables to support:
+- Deck‑specific mission boards
+- Mission backlog (10 missions per deck)
+- Player mission inventory with a max of 3 active missions
+8. Preserve Existing Mission Behavior
+- Once a mission is accepted, all existing mission completion logic should remain unchanged.
+
+Deliverables
+- Updated mission generation logic (deck‑based, not server‑based)
+- New /missionboard command implementation
+- Reaction‑based mission acceptance handler
+- Updated database schema and queries
+- Updated mission inventory logic enforcing 3‑mission limit
+- Removal of hourly spawn system
+- Backlog refill system that generates new missions every 30 minutes
+
+If you want, I can also generate a migration script, a flowchart, or a full implementation outline.

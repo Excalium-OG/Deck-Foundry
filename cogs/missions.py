@@ -7,6 +7,15 @@ from datetime import datetime, timezone, timedelta
 from typing import Optional, Dict, List
 import math
 
+from utils.card_helpers import (
+    get_player_deck_state, 
+    update_player_credits,
+    update_player_mission_points,
+    get_mp_leaderboard,
+    reset_deck_mission_points,
+    add_inventory_item
+)
+
 RARITY_HIERARCHY = ['Common', 'Uncommon', 'Exceptional', 'Rare', 'Epic', 'Legendary', 'Mythic']
 
 RARITY_WEIGHTS = {
@@ -39,6 +48,11 @@ SUCCESS_RATE_MATRIX = {
     'Mythic': {'Common': 5, 'Uncommon': 10, 'Exceptional': 20, 'Rare': 40, 'Epic': 60, 'Legendary': 75, 'Mythic': 90}
 }
 
+SLOT_EMOJIS = ['1️⃣', '2️⃣', '3️⃣']
+MAX_PLAYER_MISSIONS = 3
+BOARD_VISIBLE_SLOTS = 3
+BOARD_TOTAL_SLOTS = 10
+
 def get_success_rate(mission_rarity: str, card_rarity: str) -> int:
     """Get success rate based on mission rarity vs card rarity"""
     return SUCCESS_RATE_MATRIX.get(mission_rarity, {}).get(card_rarity, 50)
@@ -52,26 +66,25 @@ class MissionCommands(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.db_pool: asyncpg.Pool = bot.db_pool
-        self.activity_cache: Dict[int, Dict] = {}
-        self.mission_check_loop.start()
+        self.backlog_refill_loop.start()
         self.mission_lifecycle_loop.start()
-        self.cooldown_notification_loop.start()
 
     def cog_unload(self):
-        self.mission_check_loop.cancel()
+        self.backlog_refill_loop.cancel()
         self.mission_lifecycle_loop.cancel()
-        self.cooldown_notification_loop.cancel()
 
-    @tasks.loop(minutes=10)
-    async def mission_check_loop(self):
-        """Check activity levels and spawn missions hourly"""
+    @tasks.loop(minutes=5)
+    async def backlog_refill_loop(self):
+        """Refill mission board backlogs every 30 minutes"""
         try:
-            await self.check_and_spawn_missions()
+            now = datetime.now(timezone.utc)
+            if now.minute in [0, 30]:
+                await self.refill_all_mission_boards()
         except Exception as e:
-            print(f"Mission check loop error: {e}")
+            print(f"Backlog refill loop error: {e}")
 
-    @mission_check_loop.before_loop
-    async def before_mission_check(self):
+    @backlog_refill_loop.before_loop
+    async def before_backlog_refill(self):
         await self.bot.wait_until_ready()
 
     @tasks.loop(minutes=5)
@@ -86,137 +99,53 @@ class MissionCommands(commands.Cog):
     async def before_lifecycle_check(self):
         await self.bot.wait_until_ready()
 
-    @tasks.loop(minutes=5)
-    async def cooldown_notification_loop(self):
-        """Check for expired cooldowns and notify users"""
-        try:
-            await self.process_cooldown_notifications()
-        except Exception as e:
-            print(f"Cooldown notification loop error: {e}")
-
-    @cooldown_notification_loop.before_loop
-    async def before_cooldown_notification(self):
-        await self.bot.wait_until_ready()
-
-    async def process_cooldown_notifications(self):
-        """Send DMs to users whose cooldowns have expired"""
-        now = datetime.now(timezone.utc)
-        cooldown_threshold = now - timedelta(hours=4)
-        
+    async def refill_all_mission_boards(self):
+        """Refill all deck mission boards to 10 slots"""
         async with self.db_pool.acquire() as conn:
-            expired_cooldowns = await conn.fetch(
-                """SELECT user_id, guild_id, last_accept_time 
-                   FROM user_mission_cooldowns
-                   WHERE last_accept_time <= $1 
-                   AND (cooldown_notified IS NULL OR cooldown_notified = FALSE)""",
-                cooldown_threshold
+            decks = await conn.fetch(
+                """SELECT DISTINCT d.deck_id FROM decks d
+                   JOIN mission_templates mt ON d.deck_id = mt.deck_id
+                   WHERE mt.is_active = TRUE"""
             )
             
-            for cooldown in expired_cooldowns:
-                try:
-                    user = self.bot.get_user(cooldown['user_id'])
-                    guild = self.bot.get_guild(cooldown['guild_id'])
-                    guild_name = guild.name if guild else "Unknown Server"
-                    
-                    if user:
-                        await user.send(
-                            f"🔔 Your mission cooldown is ready in **{guild_name}**, you can accept a new mission!"
-                        )
-                    
-                    await conn.execute(
-                        """UPDATE user_mission_cooldowns 
-                           SET cooldown_notified = TRUE
-                           WHERE user_id = $1 AND guild_id = $2""",
-                        cooldown['user_id'], cooldown['guild_id']
-                    )
-                except Exception as e:
-                    print(f"Error notifying user {cooldown['user_id']} about cooldown: {e}")
+            for deck in decks:
+                await self.refill_mission_board(conn, deck['deck_id'])
 
-    @commands.Cog.listener()
-    async def on_message(self, message: discord.Message):
-        """Track message activity for mission spawning"""
-        if message.author.bot or not message.guild:
+    async def refill_mission_board(self, conn, deck_id: int):
+        """Refill a deck's mission board to 10 slots"""
+        current_slots = await conn.fetch(
+            """SELECT slot_position FROM mission_board_slots WHERE deck_id = $1""",
+            deck_id
+        )
+        existing_positions = {s['slot_position'] for s in current_slots}
+        
+        templates = await conn.fetch(
+            """SELECT * FROM mission_templates WHERE deck_id = $1 AND is_active = TRUE""",
+            deck_id
+        )
+        
+        if not templates:
             return
         
-        guild_id = message.guild.id
-        now = datetime.now(timezone.utc)
+        for position in range(1, BOARD_TOTAL_SLOTS + 1):
+            if position not in existing_positions:
+                await self.generate_mission_slot(conn, deck_id, position, templates)
         
-        if guild_id not in self.activity_cache:
-            self.activity_cache[guild_id] = {
-                'window_start': now,
-                'message_count': 0,
-                'unique_users': set()
-            }
-        
-        cache = self.activity_cache[guild_id]
-        
-        if (now - cache['window_start']).total_seconds() > 3600:
-            cache['window_start'] = now
-            cache['message_count'] = 0
-            cache['unique_users'] = set()
-        
-        cache['message_count'] += 1
-        cache['unique_users'].add(message.author.id)
+        await conn.execute(
+            "UPDATE decks SET last_mission_refill = $1 WHERE deck_id = $2",
+            datetime.now(timezone.utc), deck_id
+        )
 
-    async def check_and_spawn_missions(self):
-        """Check all guilds for activity and spawn missions"""
-        async with self.db_pool.acquire() as conn:
-            for guild_id, activity in self.activity_cache.items():
-                try:
-                    if activity['message_count'] < 10 or len(activity['unique_users']) < 2:
-                        continue
-                    
-                    settings = await conn.fetchrow(
-                        """SELECT * FROM server_mission_settings WHERE guild_id = $1""",
-                        guild_id
-                    )
-                    
-                    if not settings or not settings['missions_enabled'] or not settings['mission_channel_id']:
-                        continue
-                    
-                    last_spawn = settings['last_mission_spawn']
-                    if last_spawn and (datetime.now(timezone.utc) - last_spawn).total_seconds() < 3600:
-                        continue
-                    
-                    deck = await self.bot.get_server_deck(guild_id)
-                    if not deck:
-                        continue
-                    
-                    templates = await conn.fetch(
-                        """SELECT * FROM mission_templates 
-                           WHERE deck_id = $1 AND is_active = TRUE""",
-                        deck['deck_id']
-                    )
-                    
-                    if not templates:
-                        continue
-                    
-                    await self.spawn_mission(conn, guild_id, deck['deck_id'], 
-                                            settings['mission_channel_id'], templates, activity)
-                    
-                    activity['message_count'] = 0
-                    activity['unique_users'] = set()
-                    activity['window_start'] = datetime.now(timezone.utc)
-                    
-                except Exception as e:
-                    print(f"Error checking missions for guild {guild_id}: {e}")
-
-    async def spawn_mission(self, conn, guild_id: int, deck_id: int, 
-                           channel_id: int, templates: List, activity: Dict):
-        """Spawn a new mission in the guild"""
+    async def generate_mission_slot(self, conn, deck_id: int, position: int, templates: List):
+        """Generate a new mission for a specific board slot"""
         template = random.choice(templates)
         
-        activity_bonus = min(activity['message_count'] / 50, 1.0)
-        rarity_weights = RARITY_WEIGHTS.copy()
-        for rarity in ['Epic', 'Legendary', 'Mythic']:
-            rarity_weights[rarity] = int(rarity_weights[rarity] * (1 + activity_bonus))
-        
-        total_weight = sum(rarity_weights.values())
+        total_weight = sum(RARITY_WEIGHTS.values())
         roll = random.uniform(0, total_weight)
         cumulative = 0
         selected_rarity = 'Common'
         for rarity in RARITY_HIERARCHY:
-            cumulative += rarity_weights[rarity]
+            cumulative += RARITY_WEIGHTS[rarity]
             if roll <= cumulative:
                 selected_rarity = rarity
                 break
@@ -244,299 +173,324 @@ class MissionCommands(commands.Cog):
         dur_variance = base_duration * random.uniform(-variance, variance)
         duration_rolled = max(1, int(base_duration + dur_variance))
         
-        now = datetime.now(timezone.utc)
-        reaction_expires = now + timedelta(minutes=20)
-        
-        result = await conn.fetchrow(
-            """INSERT INTO active_missions 
-               (mission_template_id, guild_id, deck_id, channel_id, spawned_at,
-                reaction_expires_at, status, rarity_rolled, requirement_rolled,
-                reward_rolled, duration_rolled_hours)
-               VALUES ($1, $2, $3, $4, $5, $6, 'pending', $7, $8, $9, $10)
-               RETURNING active_mission_id""",
-            template['mission_template_id'], guild_id, deck_id, channel_id,
-            now, reaction_expires, selected_rarity, requirement_rolled,
-            reward_rolled, duration_rolled
+        await conn.execute(
+            """INSERT INTO mission_board_slots 
+               (deck_id, mission_template_id, slot_position, rarity_rolled, 
+                requirement_rolled, reward_rolled, duration_rolled_hours)
+               VALUES ($1, $2, $3, $4, $5, $6, $7)
+               ON CONFLICT (deck_id, slot_position) DO UPDATE SET
+                   mission_template_id = $2, rarity_rolled = $4,
+                   requirement_rolled = $5, reward_rolled = $6,
+                   duration_rolled_hours = $7, created_at = NOW()""",
+            deck_id, template['mission_template_id'], position,
+            selected_rarity, requirement_rolled, reward_rolled, duration_rolled
         )
+
+    @commands.hybrid_command(name='missionboard', description="View the mission board for this server's deck")
+    async def mission_board(self, ctx):
+        """Display the mission board with 3 available missions"""
+        if ctx.interaction:
+            await ctx.defer()
         
-        mission_id = result['active_mission_id']
-        
-        channel = self.bot.get_channel(channel_id)
-        if not channel:
+        guild_id = ctx.guild.id if ctx.guild else None
+        if not guild_id:
+            await ctx.send("This command can only be used in a server!")
             return
         
-        acceptance_cost = int(reward_rolled * 0.05)
-        
-        success_rates = format_success_rates_for_mission(selected_rarity)
-        
-        embed = discord.Embed(
-            title=f"🚀 Mission: {template['name']} [{selected_rarity.upper()}]",
-            description=template['description'] or "Complete this mission to earn credits!",
-            color=RARITY_COLORS.get(selected_rarity, 0x667EEA)
-        )
-        
-        embed.add_field(
-            name="📋 Requirement",
-            value=f"**{template['requirement_field']}** >= {requirement_rolled:,.0f}",
-            inline=True
-        )
-        
-        embed.add_field(
-            name="💰 Reward",
-            value=f"**{reward_rolled:,}** credits\n(Cost: {acceptance_cost} cr)",
-            inline=True
-        )
-        
-        embed.add_field(
-            name="⏱️ Duration",
-            value=f"**{duration_rolled}** hours",
-            inline=True
-        )
-        
-        embed.add_field(
-            name="📊 Success Rates by Card Rarity",
-            value=success_rates,
-            inline=False
-        )
-        
-        embed.set_footer(text=f"React with ✅ within 20 minutes to accept! | Mission #{mission_id}")
-        embed.timestamp = now
-        
-        try:
-            message = await channel.send(embed=embed)
-            await message.add_reaction("✅")
+        async with self.db_pool.acquire() as conn:
+            deck = await self.bot.get_server_deck(guild_id)
+            if not deck:
+                await ctx.send("This server doesn't have a deck assigned! An admin needs to set one up first.")
+                return
             
-            await conn.execute(
-                "UPDATE active_missions SET message_id = $1 WHERE active_mission_id = $2",
-                message.id, mission_id
+            deck_id = deck['deck_id']
+            
+            current_slots = await conn.fetch(
+                """SELECT slot_position FROM mission_board_slots WHERE deck_id = $1""",
+                deck_id
             )
             
-            await conn.execute(
-                """UPDATE server_mission_settings 
-                   SET last_mission_spawn = $1 WHERE guild_id = $2""",
-                now, guild_id
+            if len(current_slots) < BOARD_TOTAL_SLOTS:
+                templates = await conn.fetch(
+                    """SELECT * FROM mission_templates WHERE deck_id = $1 AND is_active = TRUE""",
+                    deck_id
+                )
+                if templates:
+                    await self.refill_mission_board(conn, deck_id)
+            
+            missions = await conn.fetch(
+                """SELECT mbs.*, mt.name as template_name, mt.description, mt.requirement_field
+                   FROM mission_board_slots mbs
+                   JOIN mission_templates mt ON mbs.mission_template_id = mt.mission_template_id
+                   WHERE mbs.deck_id = $1 AND mbs.slot_position <= $2
+                   ORDER BY mbs.slot_position""",
+                deck_id, BOARD_VISIBLE_SLOTS
             )
             
-        except Exception as e:
-            print(f"Error posting mission embed: {e}")
+            if not missions:
+                templates = await conn.fetch(
+                    """SELECT * FROM mission_templates WHERE deck_id = $1 AND is_active = TRUE""",
+                    deck_id
+                )
+                if not templates:
+                    await ctx.send("No mission templates configured for this deck! The deck creator needs to add some via the web portal.")
+                    return
+                await ctx.send("The mission board is being set up. Please try again in a moment!")
+                return
+            
+            player_missions = await conn.fetchval(
+                """SELECT COUNT(*) FROM active_missions 
+                   WHERE accepted_by = $1 AND status IN ('pending', 'active')""",
+                ctx.author.id
+            )
+            slots_available = MAX_PLAYER_MISSIONS - player_missions
+            
+            embed = discord.Embed(
+                title=f"🎯 Mission Board - {deck['name']}",
+                description=f"React with 1️⃣ 2️⃣ 3️⃣ to accept a mission!\n\n"
+                           f"**Your Mission Slots:** {player_missions}/{MAX_PLAYER_MISSIONS} used",
+                color=0x667EEA
+            )
+            
+            for i, mission in enumerate(missions):
+                if i >= 3:
+                    break
+                    
+                emoji = SLOT_EMOJIS[i]
+                rarity = mission['rarity_rolled']
+                color_indicator = {'Common': '⚪', 'Uncommon': '🟢', 'Exceptional': '🔵', 
+                                   'Rare': '🟣', 'Epic': '💜', 'Legendary': '🟠', 'Mythic': '🔴'}
+                
+                acceptance_cost = int(mission['reward_rolled'] * 0.05)
+                
+                field_value = (
+                    f"{color_indicator.get(rarity, '⚪')} **{rarity}**\n"
+                    f"📋 {mission['requirement_field']} >= {mission['requirement_rolled']:,.0f}\n"
+                    f"💰 Reward: {mission['reward_rolled']:,} credits\n"
+                    f"⏱️ Duration: {mission['duration_rolled_hours']}h\n"
+                    f"🎫 Cost: {acceptance_cost} credits"
+                )
+                
+                embed.add_field(
+                    name=f"{emoji} {mission['template_name']}",
+                    value=field_value,
+                    inline=True
+                )
+            
+            embed.set_footer(text=f"Missions refresh every 30 minutes | Slot ID: {deck_id}")
+            embed.timestamp = datetime.now(timezone.utc)
+            
+            message = await ctx.send(embed=embed)
+            
+            for i in range(min(len(missions), 3)):
+                await message.add_reaction(SLOT_EMOJIS[i])
+            
             await conn.execute(
-                "UPDATE active_missions SET status = 'expired' WHERE active_mission_id = $1",
-                mission_id
+                """INSERT INTO mission_board_messages (guild_id, deck_id, channel_id, message_id)
+                   VALUES ($1, $2, $3, $4)
+                   ON CONFLICT (guild_id, deck_id) DO UPDATE SET
+                       channel_id = $3, message_id = $4, updated_at = NOW()""",
+                guild_id, deck_id, ctx.channel.id, message.id
             )
 
     @commands.Cog.listener()
     async def on_raw_reaction_add(self, payload: discord.RawReactionActionEvent):
-        """Handle mission acceptance via reactions"""
-        print(f"[DEBUG] Reaction received: emoji={payload.emoji}, user={payload.user_id}, message={payload.message_id}")
-        
+        """Handle mission selection via 1️⃣ 2️⃣ 3️⃣ reactions"""
         if payload.user_id == self.bot.user.id:
-            print("[DEBUG] Ignoring bot's own reaction")
             return
         
-        if str(payload.emoji) != "✅":
-            print(f"[DEBUG] Ignoring non-checkmark emoji: {payload.emoji}")
+        emoji_str = str(payload.emoji)
+        if emoji_str not in SLOT_EMOJIS:
             return
         
-        print(f"[DEBUG] Processing checkmark reaction on message {payload.message_id}")
+        slot_index = SLOT_EMOJIS.index(emoji_str)
         
         async with self.db_pool.acquire() as conn:
-            mission = await conn.fetchrow(
-                """SELECT am.*, mt.name as template_name, mt.requirement_field
-                   FROM active_missions am
-                   JOIN mission_templates mt ON am.mission_template_id = mt.mission_template_id
-                   WHERE am.message_id = $1 AND am.status = 'pending'""",
-                payload.message_id
+            board_msg = await conn.fetchrow(
+                """SELECT * FROM mission_board_messages 
+                   WHERE message_id = $1 AND guild_id = $2""",
+                payload.message_id, payload.guild_id
             )
             
-            print(f"[DEBUG] Mission lookup result: {mission}")
-            
-            if not mission:
-                print(f"[DEBUG] No pending mission found for message {payload.message_id}")
+            if not board_msg:
                 return
             
-            now = datetime.now(timezone.utc)
-            print(f"[DEBUG] Checking expiration: now={now}, expires={mission['reaction_expires_at']}")
-            if mission['reaction_expires_at'] and now > mission['reaction_expires_at']:
-                print("[DEBUG] Mission reaction window expired")
-                return
+            deck_id = board_msg['deck_id']
             
-            print(f"[DEBUG] Checking if already accepted: accepted_by={mission['accepted_by']}")
-            if mission['accepted_by']:
-                print("[DEBUG] Mission already accepted by someone else")
-                return
-            
-            print(f"[DEBUG] Checking cooldown for user {payload.user_id}")
-            cooldown = await conn.fetchrow(
-                """SELECT last_accept_time FROM user_mission_cooldowns 
-                   WHERE user_id = $1 AND guild_id = $2""",
-                payload.user_id, payload.guild_id
-            )
-            print(f"[DEBUG] Cooldown result: {cooldown}")
-            
-            if cooldown:
-                time_since = (now - cooldown['last_accept_time']).total_seconds()
-                print(f"[DEBUG] Time since last accept: {time_since} seconds")
-                if time_since < 14400:
-                    remaining = int((14400 - time_since) / 60)
-                    print(f"[DEBUG] User on cooldown, {remaining} minutes remaining")
-                    try:
-                        user = self.bot.get_user(payload.user_id)
-                        if user:
-                            await user.send(f"❌ You're on cooldown! Wait {remaining} more minutes before accepting another mission.")
-                        channel = self.bot.get_channel(payload.channel_id)
-                        if channel:
-                            message = await channel.fetch_message(payload.message_id)
-                            await message.remove_reaction("✅", discord.Object(id=payload.user_id))
-                    except:
-                        pass
-                    return
-            
-            print(f"[DEBUG] Checking player credits for user {payload.user_id}")
-            player = await conn.fetchrow(
-                "SELECT credits FROM players WHERE user_id = $1",
+            player_missions = await conn.fetchval(
+                """SELECT COUNT(*) FROM active_missions 
+                   WHERE accepted_by = $1 AND status IN ('pending', 'active')""",
                 payload.user_id
             )
-            print(f"[DEBUG] Player result: {player}")
             
-            acceptance_cost = int(mission['reward_rolled'] * 0.05)
-            print(f"[DEBUG] Acceptance cost: {acceptance_cost}")
-            
-            if not player or player['credits'] < acceptance_cost:
-                print(f"[DEBUG] Insufficient credits: has {player['credits'] if player else 0}, needs {acceptance_cost}")
+            if player_missions >= MAX_PLAYER_MISSIONS:
                 try:
                     user = self.bot.get_user(payload.user_id)
                     if user:
-                        current_credits = player['credits'] if player else 0
                         await user.send(
                             f"❌ **Unable to Accept Mission**\n"
-                            f"You need **{acceptance_cost}** credits to accept this mission, but you only have **{current_credits}** credits."
+                            f"You don't have enough mission slots available. "
+                            f"You have {player_missions}/{MAX_PLAYER_MISSIONS} missions active.\n"
+                            f"Complete or abandon a mission first!"
                         )
                     channel = self.bot.get_channel(payload.channel_id)
                     if channel:
                         message = await channel.fetch_message(payload.message_id)
-                        await message.remove_reaction("✅", discord.Object(id=payload.user_id))
+                        await message.remove_reaction(emoji_str, discord.Object(id=payload.user_id))
                 except:
                     pass
                 return
             
-            print(f"[DEBUG] Checking for qualifying card with {mission['requirement_field']} >= {mission['requirement_rolled']}")
+            missions = await conn.fetch(
+                """SELECT mbs.*, mt.name as template_name, mt.requirement_field
+                   FROM mission_board_slots mbs
+                   JOIN mission_templates mt ON mbs.mission_template_id = mt.mission_template_id
+                   WHERE mbs.deck_id = $1 AND mbs.slot_position <= $2
+                   ORDER BY mbs.slot_position""",
+                deck_id, BOARD_VISIBLE_SLOTS
+            )
+            
+            if slot_index >= len(missions):
+                return
+            
+            mission = missions[slot_index]
+            
+            # Get player's deck-specific credits
+            state = await get_player_deck_state(conn, payload.user_id, deck_id)
+            current_credits = state['credits']
+            
+            acceptance_cost = int(mission['reward_rolled'] * 0.05)
+            
+            if current_credits < acceptance_cost:
+                try:
+                    user = self.bot.get_user(payload.user_id)
+                    if user:
+                        await user.send(
+                            f"❌ **Unable to Accept Mission**\n"
+                            f"You need **{acceptance_cost}** credits to accept this mission, "
+                            f"but you only have **{current_credits}** credits."
+                        )
+                    channel = self.bot.get_channel(payload.channel_id)
+                    if channel:
+                        message = await channel.fetch_message(payload.message_id)
+                        await message.remove_reaction(emoji_str, discord.Object(id=payload.user_id))
+                except:
+                    pass
+                return
+            
             try:
                 has_qualifying_card = await conn.fetchval(
                     """SELECT COUNT(*) FROM user_cards uc
                        JOIN cards c ON uc.card_id = c.card_id
                        JOIN card_template_fields ctf ON c.card_id = ctf.card_id
                        JOIN card_templates ct ON ctf.template_id = ct.template_id
+                       LEFT JOIN user_card_field_overrides ucfo ON uc.instance_id = ucfo.instance_id 
+                           AND ct.template_id = ucfo.template_id
                        WHERE uc.user_id = $1 AND uc.recycled_at IS NULL
                        AND ct.field_name = $2 AND ct.field_type = 'number'
                        AND ctf.field_value ~ '^[0-9.]+$'
-                       AND CAST(ctf.field_value AS FLOAT) >= $3""",
+                       AND COALESCE(ucfo.effective_numeric_value, CAST(ctf.field_value AS FLOAT)) >= $3""",
                     payload.user_id, mission['requirement_field'], mission['requirement_rolled']
                 )
-                print(f"[DEBUG] Qualifying cards count: {has_qualifying_card}")
             except Exception as e:
-                print(f"[DEBUG] Error checking qualifying card: {e}")
+                print(f"Error checking qualifying card: {e}")
                 has_qualifying_card = 0
             
             if not has_qualifying_card:
-                print("[DEBUG] No qualifying card found")
                 try:
                     user = self.bot.get_user(payload.user_id)
                     if user:
                         await user.send(
                             f"❌ **Unable to Accept Mission**\n"
-                            f"You don't have a card with **{mission['requirement_field']}** >= **{mission['requirement_rolled']:,.0f}**.\n"
+                            f"You don't have a card with **{mission['requirement_field']}** >= "
+                            f"**{mission['requirement_rolled']:,.0f}**.\n"
                             f"Collect or merge cards to meet this requirement!"
                         )
                     channel = self.bot.get_channel(payload.channel_id)
                     if channel:
                         message = await channel.fetch_message(payload.message_id)
-                        await message.remove_reaction("✅", discord.Object(id=payload.user_id))
+                        await message.remove_reaction(emoji_str, discord.Object(id=payload.user_id))
                 except:
                     pass
                 return
             
-            print("[DEBUG] All checks passed, proceeding with mission acceptance")
-            
+            now = datetime.now(timezone.utc)
             mission_expires = now + timedelta(days=1)
             
             try:
-                print("[DEBUG] Starting transaction...")
                 async with conn.transaction():
-                    print("[DEBUG] Deducting credits...")
-                    await conn.execute(
-                        "UPDATE players SET credits = credits - $1 WHERE user_id = $2",
-                        acceptance_cost, payload.user_id
+                    # Deduct acceptance cost from deck-specific credits
+                    await update_player_credits(conn, payload.user_id, deck_id, -acceptance_cost)
+                    
+                    result = await conn.fetchrow(
+                        """INSERT INTO active_missions 
+                           (mission_template_id, guild_id, deck_id, spawned_at,
+                            mission_expires_at, status, rarity_rolled, requirement_rolled,
+                            reward_rolled, duration_rolled_hours, accepted_by, accepted_at,
+                            board_slot_id)
+                           VALUES ($1, $2, $3, $4, $5, 'active', $6, $7, $8, $9, $10, $11, $12)
+                           RETURNING active_mission_id""",
+                        mission['mission_template_id'], payload.guild_id, deck_id,
+                        now, mission_expires, mission['rarity_rolled'], mission['requirement_rolled'],
+                        mission['reward_rolled'], mission['duration_rolled_hours'],
+                        payload.user_id, now, mission['slot_id']
                     )
                     
-                    print("[DEBUG] Updating active_missions...")
-                    await conn.execute(
-                        """UPDATE active_missions 
-                           SET accepted_by = $1, accepted_at = $2, status = 'active',
-                               mission_expires_at = $3
-                           WHERE active_mission_id = $4""",
-                        payload.user_id, now, mission_expires, mission['active_mission_id']
-                    )
+                    mission_id = result['active_mission_id']
                     
-                    print("[DEBUG] Inserting user_missions...")
                     await conn.execute(
                         """INSERT INTO user_missions 
                            (user_id, guild_id, active_mission_id, status, acceptance_cost, accepted_at)
                            VALUES ($1, $2, $3, 'active', $4, $5)""",
-                        payload.user_id, payload.guild_id, mission['active_mission_id'], 
-                        acceptance_cost, now
+                        payload.user_id, payload.guild_id, mission_id, acceptance_cost, now
                     )
                     
-                    print("[DEBUG] Updating cooldown...")
                     await conn.execute(
-                        """INSERT INTO user_mission_cooldowns (user_id, guild_id, last_accept_time, cooldown_notified)
-                           VALUES ($1, $2, $3, FALSE)
-                           ON CONFLICT (user_id, guild_id) 
-                           DO UPDATE SET last_accept_time = $3, cooldown_notified = FALSE""",
-                        payload.user_id, payload.guild_id, now
+                        "DELETE FROM mission_board_slots WHERE slot_id = $1",
+                        mission['slot_id']
                     )
-                print("[DEBUG] Transaction committed successfully!")
+                    
+                    removed_position = mission['slot_position']
+                    await conn.execute(
+                        """UPDATE mission_board_slots 
+                           SET slot_position = slot_position - 1
+                           WHERE deck_id = $1 AND slot_position > $2""",
+                        deck_id, removed_position
+                    )
+                    
+                    templates = await conn.fetch(
+                        """SELECT * FROM mission_templates WHERE deck_id = $1 AND is_active = TRUE""",
+                        deck_id
+                    )
+                    if templates:
+                        await self.generate_mission_slot(conn, deck_id, BOARD_TOTAL_SLOTS, templates)
+                    
             except Exception as e:
-                print(f"[DEBUG] Transaction error: {e}")
+                print(f"Error accepting mission: {e}")
                 import traceback
                 traceback.print_exc()
                 return
             
             try:
-                channel = self.bot.get_channel(payload.channel_id)
-                print(f"[DEBUG] Got channel: {channel}")
-                if channel:
-                    message = await channel.fetch_message(payload.message_id)
-                    user = self.bot.get_user(payload.user_id)
-                    print(f"[DEBUG] Got message and user: {user}")
-                    
-                    embed = message.embeds[0] if message.embeds else None
-                    if embed:
-                        embed.color = 0x10B981
-                        embed.set_footer(text=f"✅ Accepted by {user.display_name if user else 'Unknown'} | Use /startmission to begin!")
-                        await message.edit(embed=embed)
-                        await message.clear_reactions()
-                        print("[DEBUG] Updated embed successfully!")
-            except Exception as e:
-                print(f"[DEBUG] Error updating mission message: {e}")
-                import traceback
-                traceback.print_exc()
-            
-            try:
                 user = await self.bot.fetch_user(payload.user_id)
-                guild = self.bot.get_guild(payload.guild_id)
-                guild_name = guild.name if guild else "Unknown Server"
-                cooldown_ready = now + timedelta(hours=4)
-                
                 if user:
                     await user.send(
                         f"✅ **Mission Accepted!** {mission['template_name']} [{mission['rarity_rolled']}]\n\n"
                         f"💰 **Cost:** {acceptance_cost} credits deducted\n"
                         f"📋 **Next Step:** Use `/startmission` within 24 hours to begin!\n"
                         f"⏱️ **Mission Duration:** {mission['duration_rolled_hours']} hours\n\n"
-                        f"🔄 **Cooldown:** You can accept another mission in **{guild_name}** <t:{int(cooldown_ready.timestamp())}:R>"
+                        f"📊 **Your Missions:** {player_missions + 1}/{MAX_PLAYER_MISSIONS}"
                     )
             except Exception as e:
-                print(f"[DEBUG] Error sending acceptance DM: {e}")
+                print(f"Error sending acceptance DM: {e}")
+            
+            try:
+                channel = self.bot.get_channel(payload.channel_id)
+                if channel:
+                    message = await channel.fetch_message(payload.message_id)
+                    await message.remove_reaction(emoji_str, discord.Object(id=payload.user_id))
+            except:
+                pass
 
     @commands.hybrid_command(name='startmission', description="Start an accepted mission with a qualifying card")
     @app_commands.describe(
@@ -552,7 +506,7 @@ class MissionCommands(commands.Cog):
         guild_id = ctx.guild.id if ctx.guild else None
         
         if not guild_id:
-            await ctx.send("❌ This command can only be used in a server!")
+            await ctx.send("This command can only be used in a server!")
             return
         
         actual_card_name = card_name
@@ -581,10 +535,10 @@ class MissionCommands(commands.Cog):
                        FROM active_missions am
                        JOIN mission_templates mt ON am.mission_template_id = mt.mission_template_id
                        JOIN mission_rarity_scaling mrs ON mt.mission_template_id = mrs.mission_template_id
-                       WHERE am.active_mission_id = $1 AND am.accepted_by = $2 AND am.guild_id = $3 
+                       WHERE am.active_mission_id = $1 AND am.accepted_by = $2
                        AND am.status = 'active' AND am.started_at IS NULL
                        AND mrs.rarity = am.rarity_rolled""",
-                    target_mission_id, user_id, guild_id
+                    target_mission_id, user_id
                 )
             else:
                 mission = await conn.fetchrow(
@@ -593,32 +547,35 @@ class MissionCommands(commands.Cog):
                        FROM active_missions am
                        JOIN mission_templates mt ON am.mission_template_id = mt.mission_template_id
                        JOIN mission_rarity_scaling mrs ON mt.mission_template_id = mrs.mission_template_id
-                       WHERE am.accepted_by = $1 AND am.guild_id = $2 AND am.status = 'active'
+                       WHERE am.accepted_by = $1 AND am.status = 'active'
                        AND am.started_at IS NULL
                        AND mrs.rarity = am.rarity_rolled
                        ORDER BY am.accepted_at DESC
                        LIMIT 1""",
-                    user_id, guild_id
+                    user_id
                 )
             
             if not mission:
-                await ctx.send("❌ You don't have any accepted missions waiting to start! Accept a mission first.")
+                await ctx.send("You don't have any accepted missions waiting to start! Use `/missionboard` to accept one.")
                 return
             
             if target_merge_level is not None:
                 qualifying_card = await conn.fetchrow(
                     """SELECT uc.instance_id, uc.card_id, c.name, c.rarity,
-                              uc.merge_level, ctf.field_value
+                              uc.merge_level, 
+                              COALESCE(ucfo.effective_numeric_value, CAST(ctf.field_value AS FLOAT)) as effective_value
                        FROM user_cards uc
                        JOIN cards c ON uc.card_id = c.card_id
                        JOIN card_template_fields ctf ON c.card_id = ctf.card_id
                        JOIN card_templates ct ON ctf.template_id = ct.template_id
+                       LEFT JOIN user_card_field_overrides ucfo ON uc.instance_id = ucfo.instance_id 
+                           AND ct.template_id = ucfo.template_id
                        WHERE uc.user_id = $1 AND uc.recycled_at IS NULL
                        AND LOWER(c.name) = LOWER($2)
                        AND uc.merge_level = $5
                        AND ct.field_name = $3 AND ct.field_type = 'number'
                        AND ctf.field_value ~ '^[0-9.]+$'
-                       AND CAST(ctf.field_value AS FLOAT) >= $4
+                       AND COALESCE(ucfo.effective_numeric_value, CAST(ctf.field_value AS FLOAT)) >= $4
                        AND uc.instance_id NOT IN (
                            SELECT card_instance_id FROM active_missions 
                            WHERE status = 'active' AND started_at IS NOT NULL 
@@ -630,16 +587,19 @@ class MissionCommands(commands.Cog):
             else:
                 qualifying_card = await conn.fetchrow(
                     """SELECT uc.instance_id, uc.card_id, c.name, c.rarity,
-                              uc.merge_level, ctf.field_value
+                              uc.merge_level,
+                              COALESCE(ucfo.effective_numeric_value, CAST(ctf.field_value AS FLOAT)) as effective_value
                        FROM user_cards uc
                        JOIN cards c ON uc.card_id = c.card_id
                        JOIN card_template_fields ctf ON c.card_id = ctf.card_id
                        JOIN card_templates ct ON ctf.template_id = ct.template_id
+                       LEFT JOIN user_card_field_overrides ucfo ON uc.instance_id = ucfo.instance_id 
+                           AND ct.template_id = ucfo.template_id
                        WHERE uc.user_id = $1 AND uc.recycled_at IS NULL
                        AND LOWER(c.name) = LOWER($2)
                        AND ct.field_name = $3 AND ct.field_type = 'number'
                        AND ctf.field_value ~ '^[0-9.]+$'
-                       AND CAST(ctf.field_value AS FLOAT) >= $4
+                       AND COALESCE(ucfo.effective_numeric_value, CAST(ctf.field_value AS FLOAT)) >= $4
                        AND uc.instance_id NOT IN (
                            SELECT card_instance_id FROM active_missions 
                            WHERE status = 'active' AND started_at IS NOT NULL 
@@ -652,7 +612,7 @@ class MissionCommands(commands.Cog):
             
             if not qualifying_card:
                 await ctx.send(
-                    f"❌ **{card_name}** doesn't qualify for this mission!\n"
+                    f"**{card_name}** doesn't qualify for this mission!\n"
                     f"Need: {mission['requirement_field']} >= {mission['requirement_rolled']:,.0f}"
                 )
                 return
@@ -668,7 +628,6 @@ class MissionCommands(commands.Cog):
             final_success_rate = min(99, base_success_rate + merge_bonus)
             
             success_roll = random.uniform(0, 100)
-            will_succeed = success_roll <= final_success_rate
             
             async with conn.transaction():
                 await conn.execute(
@@ -714,48 +673,59 @@ class MissionCommands(commands.Cog):
                 inline=True
             )
             
-            embed.set_footer(text=f"Reward on success: {mission['reward_rolled']:,} credits")
+            embed.add_field(
+                name="Potential Reward",
+                value=f"**{mission['reward_rolled']:,}** credits",
+                inline=True
+            )
+            
+            embed.set_footer(text="Your card is now locked until the mission completes!")
             
             await ctx.send(embed=embed)
 
     @start_mission.autocomplete('mission_name')
-    async def start_mission_mission_autocomplete(self, interaction: discord.Interaction, current: str) -> List[app_commands.Choice[str]]:
-        """Autocomplete for mission selection"""
+    async def mission_name_autocomplete(self, interaction: discord.Interaction, current: str):
+        """Autocomplete for mission names"""
         user_id = interaction.user.id
-        guild_id = interaction.guild_id
         
         async with self.db_pool.acquire() as conn:
             missions = await conn.fetch(
-                """SELECT am.active_mission_id, am.rarity_rolled, am.reward_rolled, 
-                          mt.name as template_name
+                """SELECT am.active_mission_id, mt.name, am.rarity_rolled, am.reward_rolled
                    FROM active_missions am
                    JOIN mission_templates mt ON am.mission_template_id = mt.mission_template_id
-                   WHERE am.accepted_by = $1 AND am.guild_id = $2 
-                   AND am.status = 'active' AND am.started_at IS NULL
+                   WHERE am.accepted_by = $1 AND am.status = 'active' AND am.started_at IS NULL
+                   AND LOWER(mt.name) LIKE LOWER($2)
                    ORDER BY am.accepted_at DESC
                    LIMIT 25""",
-                user_id, guild_id
+                user_id, f"%{current}%"
             )
             
             choices = []
             for m in missions:
-                display = f"{m['template_name']} [{m['rarity_rolled']}] ({m['reward_rolled']:,} cr)"
-                if current.lower() in display.lower():
-                    value = f"{m['template_name']}|{m['active_mission_id']}"
-                    choices.append(app_commands.Choice(name=display[:100], value=value))
+                display = f"{m['name']} [{m['rarity_rolled']}] ({m['reward_rolled']:,}cr)"
+                value = f"{m['name']}|{m['active_mission_id']}"
+                choices.append(app_commands.Choice(name=display[:100], value=value))
             
             return choices
 
     @start_mission.autocomplete('card_name')
-    async def start_mission_card_autocomplete(self, interaction: discord.Interaction, current: str) -> List[app_commands.Choice[str]]:
-        """Autocomplete for card selection based on selected mission"""
+    async def card_name_autocomplete(self, interaction: discord.Interaction, current: str):
+        """Autocomplete for card names that qualify for the mission"""
         user_id = interaction.user.id
-        guild_id = interaction.guild_id
+        guild_id = interaction.guild.id if interaction.guild else None
         
-        selected_mission = interaction.namespace.mission_name
+        if not guild_id:
+            return []
+        
+        mission_name = None
+        for option in interaction.data.get('options', []):
+            if option['name'] == 'mission_name':
+                mission_name = option.get('value', '')
+                break
+        
         target_mission_id = None
-        if selected_mission and '|' in selected_mission:
-            parts = selected_mission.rsplit('|', 1)
+        if mission_name and '|' in mission_name:
+            parts = mission_name.rsplit('|', 1)
             try:
                 target_mission_id = int(parts[1])
             except ValueError:
@@ -776,26 +746,29 @@ class MissionCommands(commands.Cog):
                     """SELECT am.*, mt.requirement_field
                        FROM active_missions am
                        JOIN mission_templates mt ON am.mission_template_id = mt.mission_template_id
-                       WHERE am.accepted_by = $1 AND am.guild_id = $2 
+                       WHERE am.accepted_by = $1 
                        AND am.status = 'active' AND am.started_at IS NULL
                        ORDER BY am.accepted_at DESC
                        LIMIT 1""",
-                    user_id, guild_id
+                    user_id
                 )
             
             if not mission:
                 return []
             
             cards = await conn.fetch(
-                """SELECT DISTINCT c.name, c.rarity, uc.merge_level, ctf.field_value
+                """SELECT DISTINCT c.name, c.rarity, uc.merge_level, 
+                          COALESCE(ucfo.effective_numeric_value, CAST(ctf.field_value AS FLOAT)) as effective_value
                    FROM user_cards uc
                    JOIN cards c ON uc.card_id = c.card_id
                    JOIN card_template_fields ctf ON c.card_id = ctf.card_id
                    JOIN card_templates ct ON ctf.template_id = ct.template_id
+                   LEFT JOIN user_card_field_overrides ucfo ON uc.instance_id = ucfo.instance_id 
+                       AND ct.template_id = ucfo.template_id
                    WHERE uc.user_id = $1 AND uc.recycled_at IS NULL
                    AND ct.field_name = $2 AND ct.field_type = 'number'
                    AND ctf.field_value ~ '^[0-9.]+$'
-                   AND CAST(ctf.field_value AS FLOAT) >= $3
+                   AND COALESCE(ucfo.effective_numeric_value, CAST(ctf.field_value AS FLOAT)) >= $3
                    AND LOWER(c.name) LIKE LOWER($4)
                    AND uc.instance_id NOT IN (
                        SELECT card_instance_id FROM active_missions 
@@ -811,7 +784,7 @@ class MissionCommands(commands.Cog):
             choices = []
             for card in cards:
                 merge_display = f" ★{card['merge_level']}" if card['merge_level'] > 0 else ""
-                display = f"{card['name']}{merge_display} [{card['rarity']}] ({float(card['field_value']):,.0f})"
+                display = f"{card['name']}{merge_display} [{card['rarity']}] ({float(card['effective_value']):,.0f})"
                 value = f"{card['name']}|{card['merge_level']}"
                 choices.append(app_commands.Choice(name=display[:100], value=value))
             
@@ -822,22 +795,9 @@ class MissionCommands(commands.Cog):
         now = datetime.now(timezone.utc)
         
         async with self.db_pool.acquire() as conn:
-            expired_reactions = await conn.fetch(
-                """SELECT * FROM active_missions 
-                   WHERE status = 'pending' AND accepted_by IS NULL
-                   AND reaction_expires_at < $1""",
-                now
-            )
-            
-            for mission in expired_reactions:
-                await conn.execute(
-                    "UPDATE active_missions SET status = 'expired' WHERE active_mission_id = $1",
-                    mission['active_mission_id']
-                )
-            
             expired_starts = await conn.fetch(
                 """SELECT * FROM active_missions 
-                   WHERE status = 'pending' AND accepted_by IS NOT NULL
+                   WHERE status = 'active' AND started_at IS NULL
                    AND mission_expires_at < $1""",
                 now
             )
@@ -856,7 +816,8 @@ class MissionCommands(commands.Cog):
                 """SELECT am.*, mt.name as template_name
                    FROM active_missions am
                    JOIN mission_templates mt ON am.mission_template_id = mt.mission_template_id
-                   WHERE am.status = 'active' AND am.mission_expires_at < $1""",
+                   WHERE am.status = 'active' AND am.started_at IS NOT NULL 
+                   AND am.mission_expires_at < $1""",
                 now
             )
             
@@ -884,10 +845,10 @@ class MissionCommands(commands.Cog):
                         credit_bonus = int(credits_earned * merge_level * 0.05)
                         total_credits = credits_earned + credit_bonus
                         
-                        await conn.execute(
-                            "UPDATE players SET credits = credits + $1 WHERE user_id = $2",
-                            total_credits, mission['accepted_by']
-                        )
+                        mission_points = int(total_credits * 0.10)
+                        
+                        await update_player_credits(conn, mission['accepted_by'], mission['deck_id'], total_credits)
+                        await update_player_mission_points(conn, mission['accepted_by'], mission['deck_id'], mission_points)
                         
                         await conn.execute(
                             """UPDATE active_missions 
@@ -904,18 +865,18 @@ class MissionCommands(commands.Cog):
                         )
                         
                         try:
-                            user = self.bot.get_user(mission['accepted_by'])
+                            user = await self.bot.fetch_user(mission['accepted_by'])
                             guild = self.bot.get_guild(mission['guild_id'])
                             guild_name = guild.name if guild else "Unknown Server"
                             if user:
                                 bonus_text = f" (+{credit_bonus:,} merge bonus)" if credit_bonus > 0 else ""
                                 await user.send(
                                     f"🎉 Your mission, **{mission['template_name']}** [{mission['rarity_rolled']}], "
-                                    f"has completed in **{guild_name}**. It was successful, and you have gained "
-                                    f"**{total_credits:,}** credits!{bonus_text}"
+                                    f"has completed in **{guild_name}**. You gained "
+                                    f"**{total_credits:,}** credits{bonus_text} and **{mission_points:,}** MP!"
                                 )
-                        except:
-                            pass
+                        except Exception as e:
+                            print(f"Failed to send mission success DM: {e}")
                     else:
                         await conn.execute(
                             """UPDATE active_missions 
@@ -932,7 +893,7 @@ class MissionCommands(commands.Cog):
                         )
                         
                         try:
-                            user = self.bot.get_user(mission['accepted_by'])
+                            user = await self.bot.fetch_user(mission['accepted_by'])
                             guild = self.bot.get_guild(mission['guild_id'])
                             guild_name = guild.name if guild else "Unknown Server"
                             if user:
@@ -940,8 +901,8 @@ class MissionCommands(commands.Cog):
                                     f"❌ Your mission, **{mission['template_name']}** [{mission['rarity_rolled']}], "
                                     f"has completed in **{guild_name}**. It was a failure."
                                 )
-                        except:
-                            pass
+                        except Exception as e:
+                            print(f"Failed to send mission failure DM: {e}")
                             
                 except Exception as e:
                     print(f"Error processing mission {mission['active_mission_id']}: {e}")
@@ -963,33 +924,37 @@ class MissionCommands(commands.Cog):
                    LEFT JOIN cards c ON am.card_instance_id IS NOT NULL 
                         AND EXISTS (SELECT 1 FROM user_cards uc WHERE uc.instance_id = am.card_instance_id AND uc.card_id = c.card_id)
                    WHERE am.accepted_by = $1 AND am.status IN ('pending', 'active')
-                   ORDER BY am.status DESC, am.accepted_at DESC
+                   ORDER BY am.started_at DESC NULLS LAST, am.accepted_at DESC
                    LIMIT 10""",
                 user_id
             )
             
             if not missions:
-                await ctx.send("📋 You don't have any active missions. React to a mission embed to accept one!")
+                await ctx.send("📋 You don't have any active missions. Use `/missionboard` to accept one!")
                 return
             
             embed = discord.Embed(
                 title="📋 Your Missions",
+                description=f"**Slots Used:** {len(missions)}/{MAX_PLAYER_MISSIONS}",
                 color=0x667EEA
             )
             
             for m in missions:
-                if m['status'] == 'pending':
-                    status = "⏳ Pending (use /startmission)"
+                if m['started_at'] is None:
+                    status = "⏳ Accepted (use /startmission)"
+                    time_label = "Expires"
                     expires = m['mission_expires_at']
                 else:
-                    status = "🚀 Active"
+                    status = "🚀 In Progress"
+                    time_label = "Completes"
                     expires = m['mission_expires_at']
                 
-                value = f"**Status:** {status}\n"
+                value = f"**ID:** {m['active_mission_id']}\n"
+                value += f"**Status:** {status}\n"
                 value += f"**Rarity:** {m['rarity_rolled']}\n"
                 value += f"**Reward:** {m['reward_rolled']:,} credits\n"
                 if expires:
-                    value += f"**Expires:** <t:{int(expires.timestamp())}:R>"
+                    value += f"**{time_label}:** <t:{int(expires.timestamp())}:R>"
                 
                 embed.add_field(
                     name=f"{m['template_name']}",
@@ -1004,309 +969,212 @@ class MissionCommands(commands.Cog):
         admin_ids = getattr(self.bot, 'admin_ids', [])
         return user_id in admin_ids or user_id == self.bot.owner_id
 
-    @commands.command(name='sendmission')
-    async def send_mission(self, ctx):
-        """
-        [ADMIN] Manually trigger a mission spawn for testing.
-        Usage: !sendmission
-        """
+    @commands.command(name='refillboard')
+    async def refill_board(self, ctx):
+        """[ADMIN] Manually refill the mission board"""
         if not self.is_admin(ctx.author.id):
-            await ctx.send("❌ This command is only available to DeckForge admins.")
+            await ctx.send("This command is only available to DeckForge admins.")
             return
         
-        guild_id = ctx.guild.id
+        guild_id = ctx.guild.id if ctx.guild else None
+        if not guild_id:
+            await ctx.send("This command can only be used in a server!")
+            return
         
         async with self.db_pool.acquire() as conn:
-            settings = await conn.fetchrow(
-                """SELECT * FROM server_mission_settings WHERE guild_id = $1""",
-                guild_id
-            )
-            
-            if not settings or not settings['mission_channel_id']:
-                await ctx.send("❌ No mission channel configured for this server. Set one via the web portal.")
-                return
-            
-            if not settings['missions_enabled']:
-                await ctx.send("❌ Missions are disabled for this server.")
-                return
-            
-            deck = await conn.fetchrow(
-                """SELECT d.deck_id FROM decks d
-                   JOIN server_decks sd ON d.deck_id = sd.deck_id
-                   WHERE sd.guild_id = $1""",
-                guild_id
-            )
-            
+            deck = await self.bot.get_server_deck(guild_id)
             if not deck:
-                await ctx.send("❌ No deck assigned to this server.")
+                await ctx.send("This server doesn't have a deck assigned!")
                 return
             
-            templates = await conn.fetch(
-                """SELECT mt.* FROM mission_templates mt
-                   WHERE mt.deck_id = $1 AND mt.is_active = true""",
-                deck['deck_id']
-            )
-            
-            if not templates:
-                await ctx.send("❌ No active mission templates found for this deck.")
-                return
-            
-            template = random.choice(templates)
-            
-            scaling_rows = await conn.fetch(
-                """SELECT * FROM mission_rarity_scaling 
-                   WHERE mission_template_id = $1
-                   ORDER BY CASE rarity 
-                       WHEN 'Common' THEN 1 WHEN 'Uncommon' THEN 2
-                       WHEN 'Exceptional' THEN 3 WHEN 'Rare' THEN 4
-                       WHEN 'Epic' THEN 5 WHEN 'Legendary' THEN 6
-                       WHEN 'Mythic' THEN 7 END""",
-                template['mission_template_id']
-            )
-            
-            if not scaling_rows:
-                await ctx.send("❌ No rarity scaling configured for the selected mission template.")
-                return
-            
-            total_weight = sum(RARITY_WEIGHTS.get(r['rarity'], 0) for r in scaling_rows)
-            roll = random.uniform(0, total_weight)
-            cumulative = 0
-            chosen_rarity = None
-            scaling = None
-            
-            for row in scaling_rows:
-                cumulative += RARITY_WEIGHTS.get(row['rarity'], 0)
-                if roll <= cumulative:
-                    chosen_rarity = row['rarity']
-                    scaling = row
-                    break
-            
-            if not scaling:
-                scaling = scaling_rows[0]
-                chosen_rarity = scaling['rarity']
-            
-            base_req = template['min_value_base']
-            base_reward = template['reward_base']
-            base_duration = template['duration_base_hours']
-            variance = template['variance_pct'] / 100.0
-            
-            req_mult = scaling['requirement_multiplier']
-            reward_mult = scaling['reward_multiplier']
-            duration_mult = scaling['duration_multiplier']
-            
-            requirement_rolled = int(base_req * req_mult * random.uniform(1 - variance, 1 + variance))
-            reward_rolled = int(base_reward * reward_mult * random.uniform(1 - variance, 1 + variance))
-            duration_rolled = max(1, int(base_duration * duration_mult))
-            success_roll = random.randint(1, 100)
-            
-            now = datetime.now(timezone.utc)
-            reaction_expires = now + timedelta(minutes=20)
-            
-            mission_id = await conn.fetchval(
-                """INSERT INTO active_missions 
-                   (guild_id, mission_template_id, deck_id, rarity_rolled, requirement_rolled,
-                    reward_rolled, duration_rolled_hours, success_roll, spawned_at, 
-                    reaction_expires_at, status)
-                   VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'pending')
-                   RETURNING active_mission_id""",
-                guild_id, template['mission_template_id'], deck['deck_id'], chosen_rarity,
-                requirement_rolled, reward_rolled, duration_rolled, success_roll,
-                now, reaction_expires
-            )
-            
-            channel = self.bot.get_channel(settings['mission_channel_id'])
-            if not channel:
-                await ctx.send("❌ Could not find the mission channel.")
-                return
-            
-            acceptance_cost = int(reward_rolled * 0.05)
-            
-            success_rates = format_success_rates_for_mission(chosen_rarity)
-            
-            embed = discord.Embed(
-                title=f"🚀 Mission: {template['name']} [{chosen_rarity.upper()}]",
-                description=template['description'] or "Complete this mission to earn credits!",
-                color=RARITY_COLORS.get(chosen_rarity, 0x667EEA)
-            )
-            
-            embed.add_field(
-                name="📋 Requirement",
-                value=f"**{template['requirement_field']}** >= {requirement_rolled:,}",
-                inline=True
-            )
-            
-            embed.add_field(
-                name="💰 Reward",
-                value=f"**{reward_rolled:,}** credits\n(Cost: {acceptance_cost} cr)",
-                inline=True
-            )
-            
-            embed.add_field(
-                name="⏱️ Duration",
-                value=f"**{duration_rolled}** hours",
-                inline=True
-            )
-            
-            embed.add_field(
-                name="📊 Success Rates by Card Rarity",
-                value=success_rates,
-                inline=False
-            )
-            
-            embed.set_footer(text=f"React with ✅ within 20 minutes to accept! | Mission #{mission_id}")
-            embed.timestamp = now
-            
-            try:
-                message = await channel.send(embed=embed)
-                await message.add_reaction("✅")
-                
-                await conn.execute(
-                    "UPDATE active_missions SET message_id = $1, channel_id = $2 WHERE active_mission_id = $3",
-                    message.id, channel.id, mission_id
-                )
-            except Exception as e:
-                await ctx.send(f"❌ Failed to post mission embed: {e}")
-                return
-        
-        await ctx.send(f"✅ Mission spawned! Check <#{settings['mission_channel_id']}> for the mission embed.")
-
-    @commands.command(name='checkchatactivity')
-    async def check_chat_activity(self, ctx):
-        """
-        [ADMIN] Check observed chat activity and mission drop chances.
-        Usage: !checkchatactivity
-        """
-        if not self.is_admin(ctx.author.id):
-            await ctx.send("❌ This command is only available to DeckForge admins.")
-            return
-        
-        guild_id = ctx.guild.id
-        
-        if guild_id not in self.activity_cache:
-            await ctx.send("📊 No chat activity recorded yet for this server.")
-            return
-        
-        cache = self.activity_cache[guild_id]
-        message_count = cache['message_count']
-        unique_users = len(cache['unique_users'])
-        
-        channels_seen = set()
-        for member_id in cache['unique_users']:
-            for channel in ctx.guild.text_channels:
-                if channel.permissions_for(ctx.guild.get_member(member_id) or ctx.author).send_messages:
-                    channels_seen.add(channel.id)
-        
-        channel_count = len(channels_seen) if channels_seen else 1
-        
-        total_weight = sum(RARITY_WEIGHTS.values())
-        rarity_chances = []
-        for rarity in RARITY_HIERARCHY:
-            chance = (RARITY_WEIGHTS[rarity] / total_weight) * 100
-            rarity_chances.append(f"{rarity} {chance:.0f}%")
-        
-        chances_str = ", ".join(rarity_chances)
-        
-        await ctx.send(
-            f"📊 **Chat Activity Stats**\n"
-            f"{message_count} messages from {unique_users} users observed.\n"
-            f"**Mission drop chance based on rarity weights:** {chances_str}"
-        )
-
-    @commands.command(name='mresetcd')
-    async def reset_mission_cooldown(self, ctx, user: discord.Member):
-        """
-        [ADMIN] Reset mission cooldown for a user in this server.
-        Usage: !mresetcd @user
-        """
-        if not self.is_admin(ctx.author.id):
-            await ctx.send("❌ This command is only available to DeckForge admins.")
-            return
-        
-        guild_id = ctx.guild.id
-        
-        async with self.db_pool.acquire() as conn:
-            result = await conn.execute(
-                """DELETE FROM user_mission_cooldowns 
-                   WHERE user_id = $1 AND guild_id = $2""",
-                user.id, guild_id
-            )
-            
-            if result == "DELETE 0":
-                await ctx.send(f"ℹ️ {user.display_name} has no mission cooldown in this server.")
-            else:
-                await ctx.send(f"✅ Reset mission cooldown for {user.display_name} in this server.")
+            await self.refill_mission_board(conn, deck['deck_id'])
+            await ctx.send(f"✅ Mission board refilled for deck **{deck['name']}**!")
 
     @commands.command(name='mcomplete')
-    async def complete_mission(self, ctx, user: discord.Member):
+    async def force_complete_mission(self, ctx, mission_id: int):
         """
-        [ADMIN] Complete a user's started mission in this server.
-        If multiple started missions exist, completes the one with longest remaining duration.
-        Usage: !mcomplete @user
+        [ADMIN] Set a mission to complete in 10 seconds for natural completion testing.
+        Usage: !mcomplete <mission_id>
         """
         if not self.is_admin(ctx.author.id):
-            await ctx.send("❌ This command is only available to DeckForge admins.")
+            await ctx.send("This command is only available to DeckForge admins.")
             return
         
-        guild_id = ctx.guild.id
         now = datetime.now(timezone.utc)
+        expires_soon = now + timedelta(seconds=10)
         
         async with self.db_pool.acquire() as conn:
             mission = await conn.fetchrow(
                 """SELECT am.*, mt.name as template_name
                    FROM active_missions am
                    JOIN mission_templates mt ON am.mission_template_id = mt.mission_template_id
-                   WHERE am.accepted_by = $1 AND am.guild_id = $2 
-                   AND am.status = 'active' AND am.started_at IS NOT NULL
-                   ORDER BY am.mission_expires_at DESC
-                   LIMIT 1""",
-                user.id, guild_id
+                   WHERE am.active_mission_id = $1""",
+                mission_id
             )
             
             if not mission:
-                await ctx.send(f"❌ {user.display_name} has no started missions in this server.")
+                await ctx.send(f"Mission #{mission_id} not found!")
                 return
             
-            base_reward = mission['reward_rolled']
-            card_instance_id = mission['card_instance_id']
+            if mission['status'] not in ('pending', 'active'):
+                await ctx.send(f"Mission #{mission_id} is already {mission['status']}!")
+                return
             
-            merge_level = 0
-            if card_instance_id:
-                card_info = await conn.fetchrow(
-                    "SELECT merge_level FROM user_cards WHERE instance_id = $1",
-                    card_instance_id
-                )
-                if card_info:
-                    merge_level = card_info['merge_level']
-            
-            merge_bonus = int(base_reward * (merge_level * 0.05))
-            final_reward = base_reward + merge_bonus
-            
-            async with conn.transaction():
-                await conn.execute(
-                    """UPDATE active_missions 
-                       SET status = 'completed', completed_at = $1
-                       WHERE active_mission_id = $2""",
-                    now, mission['active_mission_id']
-                )
-                
-                await conn.execute(
-                    """UPDATE user_missions 
-                       SET status = 'completed', completed_at = $1, credits_earned = $2
-                       WHERE active_mission_id = $3 AND user_id = $4""",
-                    now, final_reward, mission['active_mission_id'], user.id
-                )
-                
-                await conn.execute(
-                    "UPDATE players SET credits = credits + $1 WHERE user_id = $2",
-                    final_reward, user.id
-                )
+            await conn.execute(
+                """UPDATE active_missions 
+                   SET mission_expires_at = $1
+                   WHERE active_mission_id = $2""",
+                expires_soon, mission_id
+            )
             
             await ctx.send(
-                f"✅ Completed mission **{mission['template_name']}** [{mission['rarity_rolled']}] for {user.display_name}.\n"
-                f"💰 Awarded **{final_reward:,}** credits" + 
-                (f" (+{merge_bonus:,} merge bonus)" if merge_bonus > 0 else "")
+                f"⏱️ Mission #{mission_id} (**{mission['template_name']}**) will complete naturally in **10 seconds**.\n"
+                f"The lifecycle loop runs every 5 minutes, so check back shortly or wait for the DM!"
             )
+
+    @app_commands.command(name="leaderboard", description="View the top 10 players by Mission Points (MP)")
+    async def leaderboard(self, interaction: discord.Interaction):
+        """Display MP leaderboard for the current deck"""
+        await interaction.response.defer()
+        
+        guild_id = interaction.guild_id
+        if not guild_id:
+            await interaction.followup.send("This command must be used in a server!")
+            return
+        
+        async with self.db_pool.acquire() as conn:
+            deck = await conn.fetchrow(
+                """SELECT d.deck_id, d.name FROM server_decks sd
+                   JOIN decks d ON sd.deck_id = d.deck_id
+                   WHERE sd.guild_id = $1""",
+                guild_id
+            )
+            
+            if not deck:
+                await interaction.followup.send("No deck is set for this server!")
+                return
+            
+            leaders = await get_mp_leaderboard(conn, deck['deck_id'], 10)
+        
+        if not leaders:
+            embed = discord.Embed(
+                title=f"🏆 {deck['name']} Leaderboard",
+                description="No players have earned Mission Points yet!\n\nComplete missions to earn MP and climb the leaderboard.",
+                color=discord.Color.gold()
+            )
+        else:
+            leaderboard_text = []
+            medals = ['🥇', '🥈', '🥉']
+            
+            for i, row in enumerate(leaders):
+                rank_display = medals[i] if i < 3 else f"**{i+1}.**"
+                try:
+                    user = await self.bot.fetch_user(row['user_id'])
+                    name = user.display_name
+                except:
+                    name = f"User {row['user_id']}"
+                
+                leaderboard_text.append(f"{rank_display} {name} — **{row['mission_points']:,}** MP")
+            
+            embed = discord.Embed(
+                title=f"🏆 {deck['name']} Leaderboard",
+                description="\n".join(leaderboard_text),
+                color=discord.Color.gold()
+            )
+            embed.set_footer(text="Complete missions to earn MP! Rewards at month end.")
+        
+        await interaction.followup.send(embed=embed)
+
+    @tasks.loop(hours=1)
+    async def monthly_reset_loop(self):
+        """Check for monthly reset and distribute rewards"""
+        try:
+            await self.check_and_process_monthly_reset()
+        except Exception as e:
+            print(f"Monthly reset loop error: {e}")
+
+    @monthly_reset_loop.before_loop
+    async def before_monthly_reset(self):
+        await self.bot.wait_until_ready()
+
+    async def check_and_process_monthly_reset(self):
+        """Check if it's time for monthly reset and process rewards"""
+        now = datetime.now(timezone.utc)
+        
+        if now.day != 1 or now.hour != 0:
+            return
+        
+        last_month = now - timedelta(days=1)
+        month_year = last_month.strftime('%Y-%m')
+        
+        async with self.db_pool.acquire() as conn:
+            decks = await conn.fetch("SELECT deck_id, name FROM decks")
+            
+            for deck in decks:
+                deck_id = deck['deck_id']
+                
+                already_processed = await conn.fetchval(
+                    """SELECT 1 FROM monthly_rewards_log 
+                       WHERE deck_id = $1 AND month_year = $2""",
+                    deck_id, month_year
+                )
+                
+                if already_processed:
+                    continue
+                
+                leaders = await get_mp_leaderboard(conn, deck_id, 3)
+                
+                first_user = second_user = third_user = None
+                first_mp = second_mp = third_mp = 0
+                
+                if len(leaders) >= 1:
+                    first_user = leaders[0]['user_id']
+                    first_mp = leaders[0]['mission_points']
+                    await add_inventory_item(conn, first_user, deck_id, 'pack', 'Elite Pack', 3)
+                
+                if len(leaders) >= 2:
+                    second_user = leaders[1]['user_id']
+                    second_mp = leaders[1]['mission_points']
+                    await add_inventory_item(conn, second_user, deck_id, 'pack', 'Elite Pack', 1)
+                
+                if len(leaders) >= 3:
+                    third_user = leaders[2]['user_id']
+                    third_mp = leaders[2]['mission_points']
+                    await add_inventory_item(conn, third_user, deck_id, 'pack', 'Booster Pack+', 2)
+                
+                await conn.execute(
+                    """INSERT INTO monthly_rewards_log 
+                       (deck_id, month_year, first_place_user_id, first_place_mp,
+                        second_place_user_id, second_place_mp, third_place_user_id, third_place_mp)
+                       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)""",
+                    deck_id, month_year, first_user, first_mp, second_user, second_mp, third_user, third_mp
+                )
+                
+                await reset_deck_mission_points(conn, deck_id)
+                
+                for i, leader in enumerate(leaders):
+                    try:
+                        user = await self.bot.fetch_user(leader['user_id'])
+                        if user:
+                            if i == 0:
+                                reward_text = "**3 Elite Packs**"
+                            elif i == 1:
+                                reward_text = "**1 Elite Pack**"
+                            else:
+                                reward_text = "**2 Booster+ Packs**"
+                            
+                            await user.send(
+                                f"🏆 Congratulations! You placed **#{i+1}** on the **{deck['name']}** "
+                                f"leaderboard for {last_month.strftime('%B %Y')}!\n\n"
+                                f"You earned {reward_text} as your reward. Your MP has been reset for the new month."
+                            )
+                    except Exception as e:
+                        print(f"Failed to send monthly reward DM: {e}")
+                
+                print(f"Processed monthly reset for deck {deck['name']} ({deck_id})")
 
 
 async def setup(bot):
-    await bot.add_cog(MissionCommands(bot))
+    cog = MissionCommands(bot)
+    cog.monthly_reset_loop.start()
+    await bot.add_cog(cog)
