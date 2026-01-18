@@ -45,9 +45,9 @@ Four pack types with distinct characteristics:
 
 | Pack Type | Cards | Drop Rate Modifier | Price |
 |-----------|-------|-------------------|-------|
-| Normal Pack | 3 | Base rates | Free (cooldown) or credits |
-| Booster Pack | 3 | 2x Epic/Legendary/Mythic | Credits only |
-| Booster Pack+ | 3 | 3x Epic/Legendary/Mythic | Credits only |
+| Normal Pack | 2 | Base rates | Free (cooldown) or credits |
+| Booster Pack | 2 | 2x Epic/Legendary/Mythic | Credits only |
+| Booster Pack+ | 2 | 3x Epic/Legendary/Mythic | Credits only |
 | Elite Pack | 5 | Exceptional+ floor only | Reward only |
 
 - **Free Pack Cooldown**: Configurable per deck (1-168 hours, default 8 hours).
