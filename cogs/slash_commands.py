@@ -92,7 +92,9 @@ class SlashCommands(commands.Cog):
         card_name: str
     ):
         """View detailed information about a card from your inventory"""
+        print(f"[CARDINFO] Starting for user {interaction.user.id}, card_name={card_name}")
         await interaction.response.defer()
+        print("[CARDINFO] Deferred response")
         
         guild_id = interaction.guild_id
         user_id = interaction.user.id
