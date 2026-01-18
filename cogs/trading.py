@@ -11,6 +11,7 @@ from datetime import datetime, timezone, timedelta
 from typing import Optional, Dict, List
 
 from utils.merge_helpers import format_merge_level_display
+from utils.card_helpers import get_player_deck_state, update_player_credits
 
 # Trade timeout duration
 TRADE_TIMEOUT_MINUTES = 5
@@ -242,14 +243,18 @@ class TradingCommands(commands.Cog):
             color=discord.Color.blue()
         )
         
+        # Get credits offered
+        credits_initiator = trade.get('credits_initiator', 0) or 0
+        credits_responder = trade.get('credits_responder', 0) or 0
+        
         # Initiator's offer
-        if initiator_items:
-            items_text = "\n".join([
-                f"• (x{item['quantity']}) **{item['name']}** {format_merge_level_display(item['merge_level'])} - {item['rarity']}"
-                for item in initiator_items
-            ])
-        else:
-            items_text = "*Nothing offered*"
+        offer_parts = []
+        if credits_initiator > 0:
+            offer_parts.append(f"💰 **{credits_initiator:,} credits**")
+        for item in initiator_items:
+            offer_parts.append(f"• (x{item['quantity']}) **{item['name']}** {format_merge_level_display(item['merge_level'])} - {item['rarity']}")
+        
+        items_text = "\n".join(offer_parts) if offer_parts else "*Nothing offered*"
         
         embed.add_field(
             name=f"{initiator.name}'s Offer",
@@ -258,13 +263,13 @@ class TradingCommands(commands.Cog):
         )
         
         # Responder's offer
-        if responder_items:
-            items_text = "\n".join([
-                f"• (x{item['quantity']}) **{item['name']}** {format_merge_level_display(item['merge_level'])} - {item['rarity']}"
-                for item in responder_items
-            ])
-        else:
-            items_text = "*Nothing offered*"
+        offer_parts = []
+        if credits_responder > 0:
+            offer_parts.append(f"💰 **{credits_responder:,} credits**")
+        for item in responder_items:
+            offer_parts.append(f"• (x{item['quantity']}) **{item['name']}** {format_merge_level_display(item['merge_level'])} - {item['rarity']}")
+        
+        items_text = "\n".join(offer_parts) if offer_parts else "*Nothing offered*"
         
         embed.add_field(
             name=f"{responder.name}'s Offer",
@@ -636,6 +641,104 @@ class TradingCommands(commands.Cog):
             )
             await self.display_trade_pool(ctx, dict(updated_trade))
     
+    @commands.hybrid_command(name='tradeaddcredits', description="Add credits to your side of the trade")
+    @app_commands.describe(
+        credits='Number of credits to offer (use 0 to clear)'
+    )
+    async def trade_add_credits(self, ctx, credits: int):
+        """
+        Set credits to offer in your side of the trade.
+        Usage: /tradeaddcredits <credits>
+        Example: /tradeaddcredits 100
+        """
+        if ctx.interaction:
+            await ctx.defer()
+        
+        user_id = ctx.author.id
+        guild_id = ctx.guild.id if ctx.guild else None
+        
+        if not guild_id:
+            await ctx.send("❌ This command can only be used in a server!")
+            return
+        
+        deck = await self.bot.get_server_deck(guild_id)
+        if not deck:
+            await ctx.send("❌ No deck assigned to this server!")
+            return
+        
+        deck_id = deck['deck_id']
+        
+        if credits < 0:
+            await ctx.send("❌ Credits cannot be negative!")
+            return
+        
+        if credits > 1000000:
+            await ctx.send("❌ Maximum credits per trade is 1,000,000!")
+            return
+        
+        async with self.db_pool.acquire() as conn:
+            trade = await self.get_active_trade(conn, user_id)
+            
+            if not trade or trade['status'] not in ['active', 'accepted']:
+                await ctx.send("❌ You don't have an active trade!")
+                return
+            
+            if trade['expires_at'] and trade['expires_at'] < datetime.now(timezone.utc):
+                await conn.execute(
+                    "UPDATE trades SET status = 'expired' WHERE trade_id = $1",
+                    trade['trade_id']
+                )
+                await ctx.send("❌ This trade has expired!")
+                return
+            
+            trade_id = trade['trade_id']
+            
+            # Check if user has enough credits
+            if credits > 0:
+                state = await get_player_deck_state(conn, user_id, deck_id)
+                if state['credits'] < credits:
+                    await ctx.send(
+                        f"❌ Insufficient credits!\n"
+                        f"You have **{state['credits']:,}** credits, trying to offer **{credits:,}**"
+                    )
+                    return
+            
+            # Determine which column to update
+            if user_id == trade['initiator_id']:
+                await conn.execute(
+                    "UPDATE trades SET credits_initiator = $1 WHERE trade_id = $2",
+                    credits, trade_id
+                )
+            else:
+                await conn.execute(
+                    "UPDATE trades SET credits_responder = $1 WHERE trade_id = $2",
+                    credits, trade_id
+                )
+            
+            # Reset trade acceptance if it was already accepted
+            if trade['status'] == 'accepted':
+                await conn.execute(
+                    """UPDATE trades 
+                       SET status = 'active', 
+                           initiator_accepted = FALSE, 
+                           responder_accepted = FALSE
+                       WHERE trade_id = $1""",
+                    trade_id
+                )
+        
+        if credits == 0:
+            await ctx.send("✅ Removed credits from your trade offer!")
+        else:
+            await ctx.send(f"✅ Set your credit offer to **{credits:,}** credits!")
+        
+        # Refresh and display trade pool
+        async with self.db_pool.acquire() as conn:
+            updated_trade = await conn.fetchrow(
+                "SELECT * FROM trades WHERE trade_id = $1",
+                trade_id
+            )
+            await self.display_trade_pool(ctx, dict(updated_trade))
+    
     @commands.hybrid_command(name='traderemove')
     @app_commands.describe(
         card_name='The card to remove from the trade (with merge level)',
@@ -831,6 +934,10 @@ class TradingCommands(commands.Cog):
                     )
                     return
             
+            # Get credits offered
+            credits_initiator = trade.get('credits_initiator', 0) or 0
+            credits_responder = trade.get('credits_responder', 0) or 0
+            
             # Execute trade in a transaction
             async with conn.transaction():
                 # Verify both users still have the cards at specific merge levels
@@ -850,6 +957,19 @@ class TradingCommands(commands.Cog):
                         await ctx.send(
                             f"❌ Trade failed! Responder no longer has enough **{item['name']}** {merge_display} cards."
                         )
+                        return
+                
+                # Verify credits are still available
+                if credits_initiator > 0:
+                    init_state = await get_player_deck_state(conn, trade['initiator_id'], deck_id)
+                    if init_state['credits'] < credits_initiator:
+                        await ctx.send(f"❌ Trade failed! Initiator no longer has enough credits.")
+                        return
+                
+                if credits_responder > 0:
+                    resp_state = await get_player_deck_state(conn, trade['responder_id'], deck_id)
+                    if resp_state['credits'] < credits_responder:
+                        await ctx.send(f"❌ Trade failed! Responder no longer has enough credits.")
                         return
                 
                 # Transfer initiator's cards to responder
@@ -892,6 +1012,15 @@ class TradingCommands(commands.Cog):
                            WHERE instance_id = ANY($2)""",
                         trade['initiator_id'], instance_ids
                     )
+                
+                # Transfer credits
+                if credits_initiator > 0:
+                    await update_player_credits(conn, trade['initiator_id'], deck_id, -credits_initiator)
+                    await update_player_credits(conn, trade['responder_id'], deck_id, credits_initiator)
+                
+                if credits_responder > 0:
+                    await update_player_credits(conn, trade['responder_id'], deck_id, -credits_responder)
+                    await update_player_credits(conn, trade['initiator_id'], deck_id, credits_responder)
                 
                 # Mark trade as completed
                 await conn.execute(

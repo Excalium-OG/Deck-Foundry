@@ -87,7 +87,8 @@ class DeckForgeBot(commands.Bot):
             'db/migrations/0013_freepack_notifications.sql',
             'db/migrations/0014_mission_board.sql',
             'db/migrations/0015_player_deck_state.sql',
-            'db/migrations/0016_user_inventory.sql'
+            'db/migrations/0016_user_inventory.sql',
+            'db/migrations/0017_trade_credits.sql'
         ]
         
         async with self.db_pool.acquire() as conn:

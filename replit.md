@@ -37,7 +37,7 @@ Preferred communication style: Simple, everyday language.
     - **Scaling**: Diminishing returns on boosts, pyramid scaling for card requirements, and exponential credit costs.
 - **Inventory Management**: `/mycards` command displays user collections with pagination and merge level indicators.
 - **Card Recycling**: `/recycle` command converts duplicate cards into credits, respecting merge levels and providing value previews in autocomplete.
-- **Player-to-Player Trading**: A multi-step `/requesttrade` system with secure, atomic transfers and inventory validation, supporting merge level tracking in trades.
+- **Player-to-Player Trading**: A multi-step `/requesttrade` system with secure, atomic transfers and inventory validation, supporting merge level tracking in trades. Players can also offer credits using `/tradeaddcredits`.
 - **Mission Board System**: Deck-specific mission boards with 10 slots (3 visible, 7 backlog).
     - **Rarity Scaling**: Mission templates have configurable rarity tiers with varying success rates, requirements, rewards, and durations.
     - **Acceptance & Completion**: Players accept missions via reactions, require owning specific cards, and receive DMs upon completion.
