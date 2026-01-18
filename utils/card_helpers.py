@@ -165,6 +165,16 @@ RARITY_HIERARCHY = [
 
 RARITY_ORDER = {rarity: index for index, rarity in enumerate(RARITY_HIERARCHY)}
 
+RARITY_COLORS = {
+    'Common': discord.Color.light_gray(),
+    'Uncommon': discord.Color.green(),
+    'Exceptional': discord.Color.blue(),
+    'Rare': discord.Color.purple(),
+    'Epic': discord.Color.magenta(),
+    'Legendary': discord.Color.orange(),
+    'Mythic': discord.Color.gold()
+}
+
 def validate_rarity(rarity: str) -> bool:
     """
     Validate if a rarity string is in the allowed hierarchy.
@@ -408,19 +418,7 @@ def create_card_embed(card_data: dict, instance_id: Optional[str] = None) -> dis
         Discord Embed object
     """
     rarity = card_data.get('rarity', 'Unknown')
-    
-    # Color coding by rarity
-    rarity_colors = {
-        'Common': discord.Color.light_gray(),
-        'Uncommon': discord.Color.green(),
-        'Exceptional': discord.Color.blue(),
-        'Rare': discord.Color.purple(),
-        'Epic': discord.Color.magenta(),
-        'Legendary': discord.Color.orange(),
-        'Mythic': discord.Color.gold()
-    }
-    
-    color = rarity_colors.get(rarity, discord.Color.default())
+    color = RARITY_COLORS.get(rarity, discord.Color.default())
     
     embed = discord.Embed(
         title=card_data.get('name', 'Unknown Card'),

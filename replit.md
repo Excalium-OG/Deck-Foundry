@@ -119,7 +119,7 @@ Deck-specific mission boards with competitive elements:
 |---------|-------------|
 | `/drop [amount] [pack_type]` | Open packs from inventory to get cards |
 | `/mycards` | View your card collection with pagination |
-| `/cardinfo <card_name>` | View detailed card information |
+| `/cardinfo <card>` | View detailed info for a card you own (shows boosted stats for merged cards) |
 | `/recycle <card_name>` | Convert cards to credits |
 | `/merge <card_name> [perk]` | Merge two identical cards for upgrades |
 
