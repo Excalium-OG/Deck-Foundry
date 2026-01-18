@@ -222,7 +222,13 @@ class SlashCommands(commands.Cog):
                     override = overrides[field['template_id']]
                     boosted_value = override['overridden_value']
                     metadata = override['metadata']
-                    print(f"[CARDINFO] Override metadata type: {type(metadata)}, value: {metadata}")
+                    # Parse JSON string if needed
+                    if isinstance(metadata, str):
+                        import json
+                        try:
+                            metadata = json.loads(metadata)
+                        except:
+                            metadata = {}
                     boost_pct = metadata.get('cumulative_boost_pct', 0) if metadata else 0
                     display_value = f"**{boosted_value}** ✨ ({base_value} + {boost_pct}%)"
                 else:
