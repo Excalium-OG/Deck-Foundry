@@ -42,6 +42,10 @@ Preferred communication style: Simple, everyday language.
     - **Rarity Scaling**: Mission templates have configurable rarity tiers with varying success rates, requirements, rewards, and durations.
     - **Acceptance & Completion**: Players accept missions via reactions, require owning specific cards, and receive DMs upon completion.
     - **Auto-Refill**: Background task refills boards periodically.
+    - **Mission Points (MP)**: Players earn MP equal to 10% of credits when completing missions. MP is tracked per deck.
+    - **Leaderboard**: `/leaderboard` command shows top 10 players by MP for the current deck.
+    - **Monthly Rewards**: At month end, top 3 players receive Elite/Booster+ packs and all MP resets.
+- **Elite Pack**: Premium pack type with 5 cards, Exceptional+ rarity floor (no Common/Uncommon).
 
 ### Web Admin Portal Features
 - **Dashboard**: Displays user information, managed Discord servers, and assigned decks.

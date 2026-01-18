@@ -44,7 +44,8 @@ from utils.drop_helpers import (
 from utils.pack_logic import (
     validate_pack_type,
     format_pack_type,
-    apply_pack_modifier
+    apply_pack_modifier,
+    get_pack_card_count
 )
 
 
@@ -167,9 +168,10 @@ class CardCommands(commands.Cog):
             # Apply pack modifier to get modified drop rates
             drop_rates = apply_pack_modifier(base_rates, pack_type)
             
-            # Open packs (2 cards per pack)
+            cards_per_pack = get_pack_card_count(pack_type)
+            
             dropped_cards = []
-            for _ in range(amount * 2):
+            for _ in range(amount * cards_per_pack):
                 # Select rarity based on modified weights
                 selected_rarity = select_rarity_by_weight(drop_rates)
                 
