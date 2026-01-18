@@ -20,6 +20,9 @@ Preferred communication style: Simple, everyday language.
 - **Database**: PostgreSQL is used for all persistent data storage, managed with `asyncpg`.
 - **Schema**: Key tables manage players, cards, user collections, drop rates, packs, trades, decks, server settings, card templates, and mission systems.
 - **Per-Deck Economy**: Credits and free pack cooldowns are managed independently for each deck a player interacts with via `player_deck_state`.
+- **Dual Inventory System**: Each player has two inventories per deck:
+    - **Card Inventory**: Stores collected card instances via `user_cards` table.
+    - **General Inventory**: Stores packs and future items via `user_inventory` table (keyed by user_id, deck_id, item_type, item_key).
 - **Custom Card Templates**: `card_templates` stores custom field definitions (name, type, required, display order) for each deck, with `card_template_fields` storing actual card values.
 - **Merge System**: `card_perks` tracks perk progression, `deck_merge_perks` defines available perks. Cards track `merge_level` and `locked_perk`. `user_card_field_overrides` stores instance-specific boosted field values for merged cards.
 
