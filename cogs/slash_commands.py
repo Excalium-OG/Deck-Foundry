@@ -103,6 +103,7 @@ class SlashCommands(commands.Cog):
             await interaction.followup.send("❌ This command can only be used in a server!", ephemeral=True)
             return
         
+        print("[CARDINFO] Getting deck...")
         deck = await self.bot.get_server_deck(guild_id)
         if not deck:
             await interaction.followup.send(
@@ -113,12 +114,15 @@ class SlashCommands(commands.Cog):
             return
         
         deck_id = deck['deck_id']
+        print(f"[CARDINFO] Got deck_id={deck_id}")
         
         async with self.db_pool.acquire() as conn:
             instance = None
             
             try:
+                print(f"[CARDINFO] Parsing UUID from: {card_name}")
                 instance_id = uuid.UUID(card_name)
+                print(f"[CARDINFO] Parsed UUID: {instance_id}, querying...")
                 instance = await conn.fetchrow(
                     """SELECT uc.*, c.name, c.rarity, c.image_url, c.mergeable, c.max_merge_level
                        FROM user_cards uc
@@ -126,7 +130,9 @@ class SlashCommands(commands.Cog):
                        WHERE uc.instance_id = $1 AND uc.user_id = $2 AND uc.recycled_at IS NULL""",
                     instance_id, user_id
                 )
-            except (ValueError, TypeError):
+                print(f"[CARDINFO] Query done, instance={instance is not None}")
+            except (ValueError, TypeError) as e:
+                print(f"[CARDINFO] UUID parse failed: {e}, trying name search")
                 instance = await conn.fetchrow(
                     """SELECT uc.*, c.name, c.rarity, c.image_url, c.mergeable, c.max_merge_level
                        FROM user_cards uc
