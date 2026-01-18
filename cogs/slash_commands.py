@@ -222,8 +222,11 @@ class SlashCommands(commands.Cog):
                 
                 embed.add_field(name=field_name, value=display_value, inline=True)
         
-        async with self.db_pool.acquire() as conn:
-            if instance.get('mergeable'):
+        is_mergeable = instance['mergeable'] if 'mergeable' in instance.keys() else False
+        max_merge = instance['max_merge_level'] if 'max_merge_level' in instance.keys() else 10
+        
+        if is_mergeable:
+            async with self.db_pool.acquire() as conn:
                 merge_counts = await conn.fetch(
                     """SELECT merge_level, COUNT(*) as count
                        FROM user_cards
@@ -232,29 +235,30 @@ class SlashCommands(commands.Cog):
                        ORDER BY merge_level""",
                     user_id, card_id
                 )
-                
-                if merge_counts:
-                    merge_text = "\n".join([
-                        f"Level {mc['merge_level']} {format_merge_level_display(mc['merge_level'])}: {mc['count']}x"
-                        for mc in merge_counts
-                    ])
-                    embed.add_field(
-                        name=f"Your Collection ({owned_count} total)",
-                        value=merge_text,
-                        inline=False
-                    )
-                    
-                    max_level = instance.get('max_merge_level', 10)
-                    if merge_level < max_level:
-                        embed.set_footer(text=f"Merge two Level {merge_level} cards to create Level {merge_level + 1}")
-            else:
+            
+            if merge_counts:
+                merge_text = "\n".join([
+                    f"Level {mc['merge_level']} {format_merge_level_display(mc['merge_level'])}: {mc['count']}x"
+                    for mc in merge_counts
+                ])
                 embed.add_field(
-                    name="Your Collection",
-                    value=f"{owned_count} copies",
+                    name=f"Your Collection ({owned_count} total)",
+                    value=merge_text,
                     inline=False
                 )
+                
+                if merge_level < max_merge:
+                    embed.set_footer(text=f"Merge two Level {merge_level} cards to create Level {merge_level + 1}")
+        else:
+            embed.add_field(
+                name="Your Collection",
+                value=f"{owned_count} copies",
+                inline=False
+            )
         
+        print("[CARDINFO] Sending embed...")
         await interaction.followup.send(embed=embed)
+        print("[CARDINFO] Done!")
     
     @app_commands.command(name="balance", description="Check your credit balance for this server's deck")
     async def balance(self, interaction: discord.Interaction):
