@@ -195,32 +195,41 @@ class SlashCommands(commands.Cog):
         title = f"{instance['name']} {merge_display}".strip()
         print(f"[CARDINFO] title={title}")
         
+        print("[CARDINFO] Creating embed object...")
         color = RARITY_COLORS.get(instance['rarity'], discord.Color.default())
         embed = discord.Embed(title=title, color=color)
         embed.add_field(name="Rarity", value=instance['rarity'], inline=True)
+        print("[CARDINFO] Added rarity field")
         
         if merge_level > 0:
             embed.add_field(name="Merge Level", value=str(merge_level), inline=True)
             if locked_perk:
                 embed.add_field(name="Locked Perk", value=f"🔒 {locked_perk}", inline=True)
+            print("[CARDINFO] Added merge fields")
         
         if instance['image_url']:
             embed.set_thumbnail(url=instance['image_url'])
+            print("[CARDINFO] Set thumbnail")
         
+        print(f"[CARDINFO] Processing {len(template_fields)} template fields...")
         if template_fields:
-            for field in template_fields:
+            for i, field in enumerate(template_fields):
+                print(f"[CARDINFO] Field {i}: {field['field_name']}")
                 field_name = field['field_name']
                 base_value = field['field_value'] or 'N/A'
                 
                 if field['template_id'] in overrides:
                     override = overrides[field['template_id']]
                     boosted_value = override['overridden_value']
-                    boost_pct = override['metadata'].get('cumulative_boost_pct', 0) if override['metadata'] else 0
+                    metadata = override['metadata']
+                    print(f"[CARDINFO] Override metadata type: {type(metadata)}, value: {metadata}")
+                    boost_pct = metadata.get('cumulative_boost_pct', 0) if metadata else 0
                     display_value = f"**{boosted_value}** ✨ ({base_value} + {boost_pct}%)"
                 else:
                     display_value = base_value
                 
                 embed.add_field(name=field_name, value=display_value, inline=True)
+                print(f"[CARDINFO] Added field {field_name}")
         
         is_mergeable = instance['mergeable'] if 'mergeable' in instance.keys() else False
         max_merge = instance['max_merge_level'] if 'max_merge_level' in instance.keys() else 10
