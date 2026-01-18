@@ -285,6 +285,75 @@ class PackCommands(commands.Cog):
             
             await ctx.send(embed=embed)
     
+    @commands.hybrid_command(name='inventory', description="View your general inventory for this server's deck")
+    async def inventory(self, ctx):
+        """
+        View your general inventory (packs and other items) for this server's deck.
+        Usage: /inventory
+        """
+        if ctx.interaction:
+            await ctx.defer()
+        
+        user_id = ctx.author.id
+        guild_id = ctx.guild.id if ctx.guild else None
+        
+        if not guild_id:
+            await ctx.send("❌ This command must be used in a server!")
+            return
+        
+        deck = await self.bot.get_server_deck(guild_id)
+        if not deck:
+            await ctx.send("❌ No deck assigned to this server!")
+            return
+        
+        deck_id = deck['deck_id']
+        
+        async with self.db_pool.acquire() as conn:
+            all_items = await conn.fetch(
+                """SELECT item_type, item_key, quantity FROM user_inventory
+                   WHERE user_id = $1 AND deck_id = $2 AND quantity > 0
+                   ORDER BY item_type, item_key""",
+                user_id, deck_id
+            )
+            
+            embed = discord.Embed(
+                title=f"📋 {ctx.author.display_name}'s Inventory",
+                description=f"**Deck:** {deck['name']}",
+                color=discord.Color.teal()
+            )
+            
+            if not all_items:
+                embed.add_field(
+                    name="Items",
+                    value="Your inventory is empty!\nUse `/claimfreepack` to get started.",
+                    inline=False
+                )
+            else:
+                items_by_type = {}
+                for item in all_items:
+                    item_type = item['item_type']
+                    if item_type not in items_by_type:
+                        items_by_type[item_type] = []
+                    items_by_type[item_type].append((item['item_key'], item['quantity']))
+                
+                type_emojis = {
+                    'pack': '📦',
+                    'consumable': '🧪',
+                    'currency': '💰',
+                }
+                
+                for item_type, items in items_by_type.items():
+                    emoji = type_emojis.get(item_type, '📋')
+                    type_display = item_type.title() + 's'
+                    item_list = [f"{emoji} **{key}**: {qty}" for key, qty in items]
+                    embed.add_field(
+                        name=type_display,
+                        value="\n".join(item_list),
+                        inline=False
+                    )
+            
+            await ctx.send(embed=embed)
+    
     @commands.hybrid_command(name='buypack', description="Purchase packs with credits")
     async def buy_pack(self, ctx, amount: int = 1, pack_type: str = "Normal Pack"):
         """
