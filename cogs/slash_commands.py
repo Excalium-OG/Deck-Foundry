@@ -208,8 +208,8 @@ class SlashCommands(commands.Cog):
             print("[CARDINFO] Added merge fields")
         
         if instance['image_url']:
-            embed.set_thumbnail(url=instance['image_url'])
-            print("[CARDINFO] Set thumbnail")
+            embed.set_image(url=instance['image_url'])
+            print("[CARDINFO] Set image")
         
         print(f"[CARDINFO] Processing {len(template_fields)} template fields...")
         if template_fields:
