@@ -370,6 +370,7 @@ class SlashCommands(commands.Cog):
             description="Credit purchases are not yet available!\n\n"
                        "**How to earn credits:**\n"
                        "• Recycle duplicate cards using `/recycle`\n"
+                       "• Accept & complete missions using `/missionboard`\n"
                        "• Microtransactions coming soon via Stripe integration",
             color=discord.Color.gold()
         )
