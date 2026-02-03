@@ -34,7 +34,8 @@ from utils.pack_logic import (
 PACK_PRICES = {
     'Normal Pack': 300,
     'Booster Pack': 500,
-    'Booster Pack+': 650
+    'Booster Pack+': 650,
+    'Elite Pack': 10000
 }
 
 
@@ -361,7 +362,7 @@ class PackCommands(commands.Cog):
         Usage: /buypack [amount] [pack_type]
         Example: /buypack 3 "Booster Pack"
         
-        Prices: Normal Pack (100c), Booster Pack (300c), Booster Pack+ (500c)
+        Prices: Normal Pack (300c), Booster Pack (500c), Booster Pack+ (650c)
         """
         # Defer if invoked as slash command to avoid timeout
         if ctx.interaction:
