@@ -9,9 +9,12 @@
 <body>
     <nav class="navbar">
         <div class="nav-container">
-            <h1 class="logo">DeckForge</h1>
+            <a href="/dashboard" style="text-decoration:none;"><h1 class="logo">DeckForge</h1></a>
             {% if user %}
             <div class="nav-user">
+                {% if is_global_admin is defined and is_global_admin %}
+                <a href="/admin" class="btn btn-secondary" style="font-size:0.85rem;padding:0.4rem 0.8rem;">Administration</a>
+                {% endif %}
                 <span>{{ user.username }}#{{ user.discriminator }}</span>
                 <a href="/logout" class="btn btn-secondary">Logout</a>
             </div>

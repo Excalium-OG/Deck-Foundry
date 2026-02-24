@@ -1,0 +1,162 @@
+{% extends "base.html" %}
+
+{% block title %}Audit Log - DeckForge Administration{% endblock %}
+
+{% block content %}
+<style>
+  .admin-page {
+    background: white;
+    border-radius: 12px;
+    padding: 2rem;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+  }
+
+  .admin-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 2rem;
+    flex-wrap: wrap;
+    gap: 1rem;
+  }
+
+  .admin-header h2 {
+    font-size: 2rem;
+    margin: 0;
+  }
+
+  .log-count {
+    color: #6b7280;
+    font-size: 0.95rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .audit-table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  .audit-table th {
+    text-align: left;
+    padding: 0.75rem 1rem;
+    background: #f3f4f6;
+    font-weight: 600;
+    color: #374151;
+    font-size: 0.875rem;
+    border-bottom: 2px solid #e5e7eb;
+  }
+
+  .audit-table td {
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid #f3f4f6;
+    vertical-align: middle;
+  }
+
+  .audit-table tr:hover {
+    background: #f9fafb;
+  }
+
+  .action-badge {
+    display: inline-block;
+    padding: 0.25rem 0.75rem;
+    border-radius: 999px;
+    font-size: 0.8rem;
+    font-weight: 600;
+  }
+
+  .action-disable {
+    background: #fee2e2;
+    color: #991b1b;
+  }
+
+  .action-enable {
+    background: #d1fae5;
+    color: #065f46;
+  }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1.5rem;
+    border-radius: 8px;
+    text-decoration: none;
+    font-weight: 600;
+    transition: all 0.3s ease;
+    border: 2px solid transparent;
+    cursor: pointer;
+    font-size: 1rem;
+  }
+
+  .btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+  }
+
+  .btn-secondary {
+    background: white;
+    color: #374151;
+    border-color: #d1d5db;
+  }
+
+  .btn-secondary:hover {
+    background: #f9fafb;
+  }
+
+  .empty-state {
+    text-align: center;
+    color: #6b7280;
+    padding: 3rem;
+    font-style: italic;
+  }
+
+  @media (max-width: 768px) {
+    .audit-table {
+      display: block;
+      overflow-x: auto;
+    }
+  }
+</style>
+
+<div class="admin-page">
+    <div class="admin-header">
+        <h2>Audit Log</h2>
+        <a href="/admin" class="btn btn-secondary">Back to Administration</a>
+    </div>
+
+    <p class="log-count">{{ entries|length }} log entries</p>
+
+    {% if entries %}
+    <table class="audit-table">
+        <thead>
+            <tr>
+                <th>Timestamp</th>
+                <th>Action</th>
+                <th>Deck</th>
+                <th>Performed By</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for entry in entries %}
+            <tr>
+                <td>{{ entry.created_at.strftime('%Y-%m-%d %H:%M:%S UTC') if entry.created_at else 'N/A' }}</td>
+                <td>
+                    {% if entry.action == 'Disable' %}
+                    <span class="action-badge action-disable">{{ entry.action }}</span>
+                    {% elif entry.action == 'Enable' %}
+                    <span class="action-badge action-enable">{{ entry.action }}</span>
+                    {% else %}
+                    <span class="action-badge" style="background:#e5e7eb;color:#374151;">{{ entry.action }}</span>
+                    {% endif %}
+                </td>
+                <td>{{ entry.deck_name or 'Unknown' }} (ID: {{ entry.deck_id }})</td>
+                <td>{{ entry.performed_by_username or entry.performed_by }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p class="empty-state">No audit log entries yet. Actions will appear here when decks are enabled or disabled.</p>
+    {% endif %}
+</div>
+{% endblock %}

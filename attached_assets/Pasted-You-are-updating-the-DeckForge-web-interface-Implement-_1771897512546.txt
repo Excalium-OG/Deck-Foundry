@@ -1,0 +1,59 @@
+You are updating the DeckForge web interface. Implement the following changes exactly as described. Do not alter unrelated features.
+
+1. Dashboard Page Changes (User‑Facing Only)
+Current Issue
+The “Your Decks” section on the Dashboard shows all decks when the logged‑in user is an Administrator.
+Required Change
+Modify the Dashboard so that:
+- “Your Decks” only lists decks created by the currently logged‑in user, regardless of whether they are an Administrator.
+- Remove all administration‑related data from the Dashboard.
+Do not show global deck lists or moderation tools on the Dashboard anymore.
+
+2. New Administration Page (Admin‑Only)
+Create a new page accessible only to DeckForge Administrator users.
+This page will contain:
+A. “View Decks” Button
+- Clicking this opens a new Administration → Deck List sub‑page.
+- This sub‑page must list all decks created by any user.
+B. Deck Moderation Actions
+For each deck in the admin deck list, include:
+- View — same behavior as the existing “View Cards” button in the Deck Marketplace.
+- Disable — when clicked:
+- The deck is removed from all assigned servers.
+- The deck becomes locked to “View‑only” for its creator.
+- This is a moderation action.
+- Enable — restores the deck to normal functionality.
+Implementation Notes
+- Add backend endpoints if needed for enable/disable actions.
+- Ensure only Admins can call these endpoints.
+- Disabled decks must be visually marked in the admin list.
+
+3. Audit Log Page (Admin‑Only)
+Create a new page accessible from the Administration page via an “Audit Log” button.
+Audit Log Requirements
+Each row in the audit log must include:
+- The action (Enable, Disable, etc.)
+- The deck the action was performed on
+- The user who executed the action
+- The timestamp
+Sorting
+- Default sorting: Newest first (descending timestamp)
+Data Source
+- Use or create a persistent audit log table/collection.
+- Every admin action (Enable/Disable) must write an entry.
+
+4. Access Control Requirements
+- Normal users should never see the Administration page or its sub‑pages.
+- Admin‑only pages must be protected both in the frontend and backend.
+- Dashboard must remain user‑focused and show only the user’s own decks.
+
+5. Deliverables
+Implement:
+- Updated Dashboard page
+- New Administration page
+- Administration → Deck List sub‑page
+- Enable/Disable deck actions
+- Audit Log page
+- Backend routes + database updates as needed
+- Updated navigation links (Admin page visible only to Admins)
+Ensure all new pages match the existing DeckForge UI style.
