@@ -4,21 +4,32 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}DeckForge Admin Portal{% endblock %}</title>
-    <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}?v=2025111601">
+    <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}?v=2026022401">
 </head>
 <body>
     <nav class="navbar">
         <div class="nav-container">
-            <a href="/dashboard" style="text-decoration:none;"><h1 class="logo">DeckForge</h1></a>
-            {% if user %}
-            <div class="nav-user">
+            <a href="/" style="text-decoration:none;"><h1 class="logo">DeckForge</h1></a>
+            <div class="nav-links">
+                {% if user %}
+                <a href="/dashboard" class="nav-link">Dashboard</a>
+                <a href="/marketplace" class="nav-link">Marketplace</a>
                 {% if is_global_admin is defined and is_global_admin %}
-                <a href="/admin" class="btn btn-secondary" style="font-size:0.85rem;padding:0.4rem 0.8rem;">Administration</a>
+                <a href="/admin" class="nav-link">Administration</a>
                 {% endif %}
+                {% else %}
+                <a href="/faq" class="nav-link">FAQ</a>
+                <a href="/about" class="nav-link">About</a>
+                {% endif %}
+            </div>
+            <div class="nav-user">
+                {% if user %}
                 <span>{{ user.username }}#{{ user.discriminator }}</span>
                 <a href="/logout" class="btn btn-secondary">Logout</a>
+                {% else %}
+                <a href="/login" class="btn btn-primary">Login with Discord</a>
+                {% endif %}
             </div>
-            {% endif %}
         </div>
     </nav>
 

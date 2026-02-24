@@ -17,6 +17,9 @@ body {
     background: white;
     box-shadow: 0 2px 4px rgba(0,0,0,0.1);
     padding: 1rem 0;
+    position: sticky;
+    top: 0;
+    z-index: 100;
 }
 
 .nav-container {
@@ -26,11 +29,35 @@ body {
     display: flex;
     justify-content: space-between;
     align-items: center;
+    gap: 1.5rem;
 }
 
 .logo {
     font-size: 1.5rem;
     font-weight: 700;
+    color: #667eea;
+}
+
+.nav-links {
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+    flex: 1;
+    justify-content: center;
+}
+
+.nav-link {
+    color: #4b5563;
+    text-decoration: none;
+    font-weight: 600;
+    font-size: 0.95rem;
+    padding: 0.4rem 0.8rem;
+    border-radius: 6px;
+    transition: background 0.2s, color 0.2s;
+}
+
+.nav-link:hover {
+    background: #f3f4f6;
     color: #667eea;
 }
 
