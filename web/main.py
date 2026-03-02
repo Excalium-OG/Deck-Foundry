@@ -150,14 +150,9 @@ async def require_auth(request: Request):
         raise HTTPException(status_code=401, detail="Not authenticated")
     return user
 
-# Dependency: Require admin access
+# Dependency: Require authenticated access (any Discord user)
 async def require_admin(request: Request, user = Depends(require_auth)):
-    """Dependency to require admin access"""
-    if not is_global_admin(user['id']):
-        # Check if user manages any servers
-        managed_guilds = await get_user_managed_guilds(user.get('access_token', ''))
-        if not managed_guilds:
-            raise HTTPException(status_code=403, detail="Insufficient permissions")
+    """Dependency to require authentication. Any Discord user may access deck features."""
     return user
 
 def check_deck_disabled(deck, user_id):
