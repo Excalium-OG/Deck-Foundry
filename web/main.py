@@ -100,14 +100,15 @@ async def get_current_user(request: Request) -> Optional[Dict]:
             }
     return None
 
-# Helper: Check if user is global admin
+# Admin IDs - mirrors bot.py fallback logic
+_ADMIN_IDS = [190506752112852992]
+_admin_ids_env = os.getenv("ADMIN_IDS", "")
+if _admin_ids_env:
+    _ADMIN_IDS = [int(id.strip()) for id in _admin_ids_env.split(",") if id.strip()]
+
 def is_global_admin(user_id: int) -> bool:
     """Check if user is a global admin"""
-    admin_ids_str = os.getenv("ADMIN_IDS", "")
-    if not admin_ids_str:
-        return False
-    admin_ids = [int(id.strip()) for id in admin_ids_str.split(",") if id.strip()]
-    return user_id in admin_ids
+    return int(user_id) in _ADMIN_IDS
 
 # Helper: Get user's managed guilds from Discord API
 async def get_user_managed_guilds(access_token: str) -> List[Dict]:
