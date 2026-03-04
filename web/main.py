@@ -941,6 +941,28 @@ async def edit_deck_form(request: Request, deck_id: int, user = Depends(require_
             deck_id
         )
     
+    template_field_ids = {tf['template_id'] for tf in template_fields}
+    cards_list = []
+    for card in cards:
+        card_dict = dict(card)
+        tv_raw = card_dict.get('template_values') or []
+        tv_map = {}
+        for item in tv_raw:
+            if isinstance(item, str):
+                import json as _json
+                item = _json.loads(item)
+            elif not isinstance(item, dict):
+                item = dict(item)
+            tid = item.get('template_id')
+            fv = item.get('field_value')
+            if tid is not None:
+                tv_map[tid] = fv
+        card_dict['has_issues'] = bool(template_field_ids) and any(
+            tid not in tv_map or tv_map[tid] is None or str(tv_map[tid]).strip() == ''
+            for tid in template_field_ids
+        )
+        cards_list.append(card_dict)
+
     return templates.TemplateResponse("edit_deck.html", {
         "request": request,
         "user": user,
@@ -949,7 +971,7 @@ async def edit_deck_form(request: Request, deck_id: int, user = Depends(require_
         "number_template_fields": number_template_fields,
         "merge_perks": merge_perks,
         "deck": dict(deck),
-        "cards": [dict(c) for c in cards],
+        "cards": cards_list,
         "active_section": "overview"
     })
 

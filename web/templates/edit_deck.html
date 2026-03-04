@@ -98,6 +98,78 @@
     justify-content: space-between;
     margin-bottom: 1rem;
   }
+  .cards-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+    flex-wrap: wrap;
+  }
+  .cards-toolbar label {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: #374151;
+    white-space: nowrap;
+  }
+  .cards-toolbar select {
+    padding: 0.4rem 0.7rem;
+    border: 2px solid #d1d5db;
+    border-radius: 6px;
+    font-size: 0.875rem;
+    font-family: inherit;
+    background: white;
+    cursor: pointer;
+  }
+  .cards-toolbar select:focus {
+    outline: none;
+    border-color: #667eea;
+  }
+  .issue-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.25rem;
+    height: 1.25rem;
+    background: #ef4444;
+    color: white;
+    border-radius: 50%;
+    font-size: 0.7rem;
+    font-weight: 900;
+    margin-left: 0.35rem;
+    cursor: default;
+    flex-shrink: 0;
+    position: relative;
+  }
+  .issue-badge::after {
+    content: attr(data-tooltip);
+    position: absolute;
+    bottom: calc(100% + 5px);
+    left: 50%;
+    transform: translateX(-50%);
+    background: #1f2937;
+    color: white;
+    font-size: 0.72rem;
+    font-weight: 500;
+    padding: 0.25rem 0.55rem;
+    border-radius: 4px;
+    white-space: nowrap;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.15s;
+    z-index: 10;
+  }
+  .issue-badge:hover::after {
+    opacity: 1;
+  }
+  .issue-count-badge {
+    background: #fef2f2;
+    color: #dc2626;
+    border: 1px solid #fecaca;
+    border-radius: 9999px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    padding: 0.15rem 0.6rem;
+  }
 </style>
 
 <div class="marketplace-panel">
@@ -126,14 +198,34 @@
 
 <div class="cards-panel">
   <div class="add-card-cta">
-    <h3 style="margin:0;">Cards in Deck ({{ cards|length }})</h3>
+    <h3 style="margin:0;">
+      Cards in Deck ({{ cards|length }})
+      {% set issue_count = cards | selectattr('has_issues') | list | length %}
+      {% if issue_count > 0 %}
+      <span class="issue-count-badge" style="margin-left:0.5rem;">{{ issue_count }} issue{{ 's' if issue_count != 1 }}</span>
+      {% endif %}
+    </h3>
     <a href="/deck/{{ deck.deck_id }}/card/new" class="df-btn df-btn-primary df-btn-sm">Add New Card</a>
   </div>
 
   {% if cards %}
-  <div class="cards-list">
+  <div class="cards-toolbar">
+    <label for="card-sort">Sort by:</label>
+    <select id="card-sort" onchange="sortCards(this.value)">
+      <option value="rarity-desc">Rarity (Highest first)</option>
+      <option value="rarity-asc">Rarity (Lowest first)</option>
+      <option value="name-asc">Alphabetically (A → Z)</option>
+      <option value="name-desc">Alphabetically (Z → A)</option>
+      <option value="issues">Issues first</option>
+    </select>
+  </div>
+
+  <div class="cards-list" id="cards-list">
     {% for card in cards %}
-    <div class="card-item">
+    <div class="card-item"
+         data-name="{{ card.name | lower }}"
+         data-rarity="{{ card.rarity }}"
+         data-has-issues="{{ 'true' if card.has_issues else 'false' }}">
       <div class="card-preview">
         {% if card.image_url %}
         <img src="{{ card.image_url }}" alt="{{ card.name }}" class="card-thumbnail">
@@ -141,7 +233,13 @@
         <div class="card-thumbnail-placeholder">🃏</div>
         {% endif %}
         <div class="card-details">
-          <h4>{{ card.name }} <span class="card-rarity-badge">{{ card.rarity }}</span></h4>
+          <h4 style="display:flex;align-items:center;flex-wrap:wrap;gap:0.15rem;">
+            {{ card.name }}
+            <span class="card-rarity-badge">{{ card.rarity }}</span>
+            {% if card.has_issues %}
+            <span class="issue-badge" data-tooltip="Missing values">!</span>
+            {% endif %}
+          </h4>
           <p class="card-description">{{ card.description[:90] }}{% if card.description|length > 90 %}...{% endif %}</p>
         </div>
       </div>
@@ -159,4 +257,43 @@
   <p class="df-empty-state">No cards yet. Use "Add New Card" in the sidebar to get started.</p>
   {% endif %}
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const RARITY_ORDER = {
+  'Common': 1, 'Uncommon': 2, 'Exceptional': 3,
+  'Rare': 4, 'Epic': 5, 'Legendary': 6, 'Mythic': 7
+};
+
+function sortCards(mode) {
+  const list = document.getElementById('cards-list');
+  if (!list) return;
+  const items = Array.from(list.querySelectorAll('.card-item'));
+
+  items.sort(function(a, b) {
+    const nameA = a.dataset.name;
+    const nameB = b.dataset.name;
+    const rarityA = RARITY_ORDER[a.dataset.rarity] || 0;
+    const rarityB = RARITY_ORDER[b.dataset.rarity] || 0;
+    const issueA = a.dataset.hasIssues === 'true' ? 0 : 1;
+    const issueB = b.dataset.hasIssues === 'true' ? 0 : 1;
+
+    if (mode === 'rarity-desc') {
+      return rarityB !== rarityA ? rarityB - rarityA : nameA.localeCompare(nameB);
+    } else if (mode === 'rarity-asc') {
+      return rarityA !== rarityB ? rarityA - rarityB : nameA.localeCompare(nameB);
+    } else if (mode === 'name-asc') {
+      return nameA.localeCompare(nameB);
+    } else if (mode === 'name-desc') {
+      return nameB.localeCompare(nameA);
+    } else if (mode === 'issues') {
+      return issueA !== issueB ? issueA - issueB : rarityB - rarityA;
+    }
+    return 0;
+  });
+
+  items.forEach(function(item) { list.appendChild(item); });
+}
+</script>
 {% endblock %}
