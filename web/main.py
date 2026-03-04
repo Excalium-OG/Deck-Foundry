@@ -1008,6 +1008,165 @@ async def merge_perks_page(request: Request, deck_id: int, user = Depends(requir
         "active_section": "merge_perks"
     })
 
+@app.get("/deck/{deck_id}/template", response_class=HTMLResponse)
+async def card_template_page(request: Request, deck_id: int, user = Depends(require_admin)):
+    """Card Template management page — add/edit/delete template attributes"""
+    pool = await get_db_pool()
+    async with pool.acquire() as conn:
+        deck = await conn.fetchrow("SELECT * FROM decks WHERE deck_id = $1", deck_id)
+        if not deck:
+            raise HTTPException(status_code=404, detail="Deck not found")
+        if deck['created_by'] != user['id'] and not is_global_admin(user['id']):
+            raise HTTPException(status_code=403, detail="You don't own this deck")
+        if deck['disabled'] and not is_global_admin(user['id']):
+            return RedirectResponse(url=f"/deck/{deck_id}/view", status_code=303)
+        fields = await conn.fetch(
+            "SELECT template_id, field_name, field_type, dropdown_options, field_order, is_required FROM card_templates WHERE deck_id = $1 ORDER BY field_order, template_id",
+            deck_id
+        )
+        card_count = await conn.fetchval("SELECT COUNT(*) FROM cards WHERE deck_id = $1", deck_id)
+    return templates.TemplateResponse("card_template.html", {
+        "request": request,
+        "user": user,
+        "is_global_admin": is_global_admin(user['id']),
+        "deck": dict(deck),
+        "fields": fields,
+        "card_count": card_count,
+        "active_section": "template"
+    })
+
+
+@app.post("/deck/{deck_id}/template/field/add")
+async def add_template_field(request: Request, deck_id: int, user = Depends(require_admin)):
+    """Add a new attribute to the card template and propagate defaults to all existing cards"""
+    form_data = await request.form()
+    field_name = (form_data.get('field_name') or '').strip()
+    field_type = form_data.get('field_type', 'text')
+    dropdown_options = (form_data.get('dropdown_options') or '').strip() or None
+    is_required = form_data.get('is_required') == '1'
+
+    if not field_name or field_type not in ('text', 'number', 'dropdown'):
+        return RedirectResponse(url=f"/deck/{deck_id}/template?status=error&msg=Invalid+attribute+name+or+type", status_code=303)
+
+    pool = await get_db_pool()
+    async with pool.acquire() as conn:
+        deck = await conn.fetchrow("SELECT created_by, disabled FROM decks WHERE deck_id = $1", deck_id)
+        if not deck:
+            raise HTTPException(status_code=404, detail="Deck not found")
+        if deck['created_by'] != user['id'] and not is_global_admin(user['id']):
+            raise HTTPException(status_code=403, detail="You don't own this deck")
+        if check_deck_disabled(deck, user['id']):
+            raise HTTPException(status_code=403, detail="This deck has been disabled")
+
+        existing = await conn.fetchval(
+            "SELECT template_id FROM card_templates WHERE deck_id = $1 AND LOWER(field_name) = LOWER($2)",
+            deck_id, field_name
+        )
+        if existing:
+            return RedirectResponse(url=f"/deck/{deck_id}/template?status=duplicate", status_code=303)
+
+        max_order = await conn.fetchval(
+            "SELECT COALESCE(MAX(field_order), -1) FROM card_templates WHERE deck_id = $1", deck_id
+        )
+        new_field = await conn.fetchrow(
+            """INSERT INTO card_templates (deck_id, field_name, field_type, dropdown_options, field_order, is_required)
+               VALUES ($1, $2, $3, $4, $5, $6) RETURNING template_id""",
+            deck_id, field_name, field_type, dropdown_options, max_order + 1, is_required
+        )
+        template_id = new_field['template_id']
+
+        default_value = '0' if field_type == 'number' else (None if field_type == 'dropdown' else '')
+        card_ids = await conn.fetch("SELECT card_id FROM cards WHERE deck_id = $1", deck_id)
+        for card in card_ids:
+            await conn.execute(
+                """INSERT INTO card_template_fields (card_id, template_id, field_value)
+                   VALUES ($1, $2, $3) ON CONFLICT (card_id, template_id) DO NOTHING""",
+                card['card_id'], template_id, default_value
+            )
+
+    return RedirectResponse(url=f"/deck/{deck_id}/template?status=added", status_code=303)
+
+
+@app.post("/deck/{deck_id}/template/field/{template_id}/update")
+async def update_template_field(request: Request, deck_id: int, template_id: int, user = Depends(require_admin)):
+    """Update a template attribute — propagates dropdown option removals to existing cards"""
+    form_data = await request.form()
+    field_name = (form_data.get('field_name') or '').strip()
+    field_type = form_data.get('field_type', 'text')
+    dropdown_options = (form_data.get('dropdown_options') or '').strip() or None
+    is_required = form_data.get('is_required') == '1'
+
+    if not field_name or field_type not in ('text', 'number', 'dropdown'):
+        return RedirectResponse(url=f"/deck/{deck_id}/template?status=error&msg=Invalid+attribute+name+or+type", status_code=303)
+
+    pool = await get_db_pool()
+    async with pool.acquire() as conn:
+        deck = await conn.fetchrow("SELECT created_by, disabled FROM decks WHERE deck_id = $1", deck_id)
+        if not deck:
+            raise HTTPException(status_code=404, detail="Deck not found")
+        if deck['created_by'] != user['id'] and not is_global_admin(user['id']):
+            raise HTTPException(status_code=403, detail="You don't own this deck")
+        if check_deck_disabled(deck, user['id']):
+            raise HTTPException(status_code=403, detail="This deck has been disabled")
+
+        old_field = await conn.fetchrow(
+            "SELECT * FROM card_templates WHERE template_id = $1 AND deck_id = $2",
+            template_id, deck_id
+        )
+        if not old_field:
+            raise HTTPException(status_code=404, detail="Template field not found")
+
+        duplicate = await conn.fetchval(
+            "SELECT template_id FROM card_templates WHERE deck_id = $1 AND LOWER(field_name) = LOWER($2) AND template_id != $3",
+            deck_id, field_name, template_id
+        )
+        if duplicate:
+            return RedirectResponse(url=f"/deck/{deck_id}/template?status=duplicate", status_code=303)
+
+        if old_field['field_type'] == 'dropdown' and field_type == 'dropdown':
+            old_opts = {o.strip() for o in (old_field['dropdown_options'] or '').split(',') if o.strip()}
+            new_opts = {o.strip() for o in (dropdown_options or '').split(',') if o.strip()}
+            removed_opts = old_opts - new_opts
+            for removed in removed_opts:
+                await conn.execute(
+                    "UPDATE card_template_fields SET field_value = NULL WHERE template_id = $1 AND field_value = $2",
+                    template_id, removed
+                )
+        elif old_field['field_type'] == 'dropdown' and field_type != 'dropdown':
+            dropdown_options = None
+
+        await conn.execute(
+            """UPDATE card_templates SET field_name = $1, field_type = $2, dropdown_options = $3, is_required = $4
+               WHERE template_id = $5""",
+            field_name, field_type, dropdown_options, is_required, template_id
+        )
+
+    return RedirectResponse(url=f"/deck/{deck_id}/template?status=updated", status_code=303)
+
+
+@app.post("/deck/{deck_id}/template/field/{template_id}/delete")
+async def delete_template_field(request: Request, deck_id: int, template_id: int, user = Depends(require_admin)):
+    """Delete a template attribute — CASCADE removes all card values for this field"""
+    pool = await get_db_pool()
+    async with pool.acquire() as conn:
+        deck = await conn.fetchrow("SELECT created_by, disabled FROM decks WHERE deck_id = $1", deck_id)
+        if not deck:
+            raise HTTPException(status_code=404, detail="Deck not found")
+        if deck['created_by'] != user['id'] and not is_global_admin(user['id']):
+            raise HTTPException(status_code=403, detail="You don't own this deck")
+        if check_deck_disabled(deck, user['id']):
+            raise HTTPException(status_code=403, detail="This deck has been disabled")
+
+        deleted = await conn.fetchval(
+            "DELETE FROM card_templates WHERE template_id = $1 AND deck_id = $2 RETURNING template_id",
+            template_id, deck_id
+        )
+        if not deleted:
+            raise HTTPException(status_code=404, detail="Template field not found")
+
+    return RedirectResponse(url=f"/deck/{deck_id}/template?status=deleted", status_code=303)
+
+
 @app.post("/deck/{deck_id}/card/add")
 async def add_card_to_deck(
     request: Request,

@@ -219,6 +219,10 @@
        class="sidenav-link {% if active_section == 'add_card' %}active{% endif %}">
       Add New Card
     </a>
+    <a href="/deck/{{ deck.deck_id }}/template"
+       class="sidenav-link {% if active_section == 'template' %}active{% endif %}">
+      Card Template
+    </a>
 
     <div class="sidenav-section">Configuration</div>
     <a href="/deck/{{ deck.deck_id }}/merge-perks"
