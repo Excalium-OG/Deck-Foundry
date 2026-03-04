@@ -1,212 +1,92 @@
-{% extends "base.html" %}
+{% extends "deck_base.html" %}
 
-{% block title %}Edit Rarity Rates - {{ deck.name }}{% endblock %}
+{% block title %}Edit Drop Rates - {{ deck.name }}{% endblock %}
+{% block page_title %}Edit Drop Rates{% endblock %}
 
-{% block content %}
+{% block deck_content %}
 <style>
-  .form-container {
-    background: white;
-    border-radius: 12px;
-    padding: 2rem;
-    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-    max-width: 900px;
-    margin: 0 auto;
-  }
-
-  .deck-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 2rem;
-  }
-
-  .deck-header h2 {
-    margin: 0;
-  }
-
-  .rarity-info {
-    background: #f3f4f6;
-    padding: 1.5rem;
-    border-radius: 8px;
-    margin-bottom: 2rem;
-  }
-
-  .total-display {
-    font-size: 1.25rem;
-    font-weight: bold;
-    margin-top: 0.5rem;
-  }
-
   .rarity-inputs {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
     gap: 1rem;
-    margin-bottom: 2rem;
-  }
-
-  .form-group {
-    margin-bottom: 0;
-  }
-
-  .form-group label {
-    display: block;
-    margin-bottom: 0.5rem;
-    font-weight: 600;
-    color: #374151;
-  }
-
-  .input-with-suffix {
-    position: relative;
-  }
-
-  .input-with-suffix input {
-    width: 100%;
-    padding: 0.75rem 2rem 0.75rem 0.75rem;
-    border: 2px solid #d1d5db;
-    border-radius: 8px;
-    font-size: 1rem;
-  }
-
-  .input-with-suffix .suffix {
-    position: absolute;
-    right: 0.75rem;
-    top: 50%;
-    transform: translateY(-50%);
-    color: #6b7280;
-    font-weight: 600;
-  }
-
-  .form-actions {
-    display: flex;
-    gap: 1rem;
-    margin-top: 2rem;
-  }
-
-  .btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.75rem 1.5rem;
-    border-radius: 8px;
-    text-decoration: none;
-    font-weight: 600;
-    border: 2px solid transparent;
-    cursor: pointer;
-    font-size: 1rem;
-  }
-
-  .btn-primary {
-    background: #667eea;
-    color: white;
-    border-color: #5568d3;
-  }
-
-  .btn-secondary {
-    background: white;
-    color: #374151;
-    border-color: #d1d5db;
-  }
-
-  .alert {
-    padding: 1rem;
-    border-radius: 8px;
     margin-bottom: 1.5rem;
   }
-
+  .input-with-suffix { position: relative; }
+  .input-with-suffix input {
+    width: 100%; padding: 0.75rem 2rem 0.75rem 0.75rem;
+    border: 2px solid #d1d5db; border-radius: 8px; font-size: 1rem;
+    box-sizing: border-box;
+  }
+  .input-with-suffix input:focus { outline: none; border-color: #667eea; }
+  .input-with-suffix .suffix {
+    position: absolute; right: 0.75rem; top: 50%;
+    transform: translateY(-50%); color: #6b7280; font-weight: 600;
+  }
+  .total-box {
+    background: #f3f4f6; border-radius: 8px; padding: 1rem 1.25rem;
+    margin-bottom: 1.5rem; font-size: 1.05rem;
+  }
   .alert-success {
-    background: #d1fae5;
-    color: #065f46;
-    border: 1px solid #10b981;
+    background: #d1fae5; color: #065f46; border: 1px solid #10b981;
+    padding: 0.75rem 1rem; border-radius: 8px; margin-bottom: 1rem; font-size: 0.95rem;
   }
 </style>
 
-<div class="form-container">
-    <div class="deck-header">
-        <h2>{{ deck.name }} - Rarity Drop Rates</h2>
-        <a href="/deck/{{ deck.deck_id }}/edit" class="btn btn-secondary">Back to Deck</a>
-    </div>
-    
-    {% if request.query_params.get('success') == '1' %}
-    <div class="alert alert-success">
-        ✅ Rarity rates updated successfully!
-    </div>
-    {% endif %}
-    
-    <form method="POST" action="/deck/{{ deck.deck_id }}/rarity/update" class="rarity-form" id="rarityForm">
-        <div class="rarity-info">
-            <p><strong>Configure drop rates for each rarity tier. Total must equal 100%.</strong></p>
-            <p class="total-display">Current Total: <span id="totalRate">0</span>%</p>
-        </div>
-        
-        <div class="rarity-inputs">
-            {% for rate in rates %}
-            <div class="form-group">
-                <label for="rate_{{ rate.rarity }}">{{ rate.rarity }}</label>
-                <div class="input-with-suffix">
-                    <input type="number" 
-                           id="rate_{{ rate.rarity }}" 
-                           name="rate_{{ rate.rarity }}" 
-                           value="{{ rate.drop_rate }}" 
-                           min="0" 
-                           max="100" 
-                           step="0.1" 
-                           required
-                           class="rate-input">
-                    <span class="suffix">%</span>
-                </div>
-            </div>
-            {% endfor %}
-        </div>
-        
-        <div class="form-actions">
-            <a href="/deck/{{ deck.deck_id }}/edit" class="btn btn-secondary">Cancel</a>
-            <button type="submit" class="btn btn-primary" id="submitBtn">Save Rates</button>
-        </div>
-    </form>
-</div>
+<div class="deck-content-card">
+  {% if request.query_params.get('success') == '1' %}
+  <div class="alert-success">Drop rates updated successfully.</div>
+  {% endif %}
 
+  <form method="POST" action="/deck/{{ deck.deck_id }}/rarity/update" id="rarityForm">
+    <div class="total-box">
+      <strong>Total: <span id="totalRate">0</span>%</strong>
+      <span style="color:#6b7280;font-size:0.9rem;margin-left:0.75rem;">Must equal exactly 100%</span>
+    </div>
+
+    <div class="rarity-inputs">
+      {% for rate in rates %}
+      <div class="df-form-group" style="margin-bottom:0;">
+        <label for="rate_{{ rate.rarity }}">{{ rate.rarity }}</label>
+        <div class="input-with-suffix">
+          <input type="number" id="rate_{{ rate.rarity }}" name="rate_{{ rate.rarity }}"
+                 value="{{ rate.drop_rate }}" min="0" max="100" step="0.1"
+                 required class="rate-input">
+          <span class="suffix">%</span>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+
+    <div style="display:flex;gap:1rem;">
+      <button type="submit" class="df-btn df-btn-primary" id="submitBtn">Save Rates</button>
+      <a href="/deck/{{ deck.deck_id }}/edit" class="df-btn df-btn-secondary">Cancel</a>
+    </div>
+  </form>
+</div>
+{% endblock %}
+
+{% block scripts %}
 <script>
-    // Calculate and display total rate
-    function updateTotal() {
-        const inputs = document.querySelectorAll('.rate-input');
-        let total = 0;
-        inputs.forEach(input => {
-            total += parseFloat(input.value) || 0;
-        });
-        const totalDisplay = document.getElementById('totalRate');
-        totalDisplay.textContent = total.toFixed(1);
-        
-        // Visual feedback
-        const submitBtn = document.getElementById('submitBtn');
-        if (Math.abs(total - 100) < 0.01) {
-            totalDisplay.style.color = '#10b981';
-            submitBtn.disabled = false;
-        } else {
-            totalDisplay.style.color = '#ef4444';
-            submitBtn.disabled = true;
-        }
-    }
-    
-    // Add event listeners to all inputs
-    document.querySelectorAll('.rate-input').forEach(input => {
-        input.addEventListener('input', updateTotal);
-    });
-    
-    // Initial calculation
-    updateTotal();
-    
-    // Validate on submit
-    document.getElementById('rarityForm').addEventListener('submit', function(e) {
-        const inputs = document.querySelectorAll('.rate-input');
-        let total = 0;
-        inputs.forEach(input => {
-            total += parseFloat(input.value) || 0;
-        });
-        
-        if (Math.abs(total - 100) > 0.01) {
-            e.preventDefault();
-            alert('Rates must total exactly 100%. Current total: ' + total.toFixed(1) + '%');
-        }
-    });
+function updateTotal() {
+  let total = 0;
+  document.querySelectorAll('.rate-input').forEach(i => { total += parseFloat(i.value) || 0; });
+  const span = document.getElementById('totalRate');
+  const btn = document.getElementById('submitBtn');
+  span.textContent = total.toFixed(1);
+  const ok = Math.abs(total - 100) < 0.01;
+  span.style.color = ok ? '#10b981' : '#ef4444';
+  btn.disabled = !ok;
+}
+document.querySelectorAll('.rate-input').forEach(i => i.addEventListener('input', updateTotal));
+updateTotal();
+
+document.getElementById('rarityForm').addEventListener('submit', function(e) {
+  let total = 0;
+  document.querySelectorAll('.rate-input').forEach(i => { total += parseFloat(i.value) || 0; });
+  if (Math.abs(total - 100) > 0.01) {
+    e.preventDefault();
+    alert('Rates must total exactly 100%. Current total: ' + total.toFixed(1) + '%');
+  }
+});
 </script>
 {% endblock %}

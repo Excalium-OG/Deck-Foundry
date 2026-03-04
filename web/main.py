@@ -949,7 +949,63 @@ async def edit_deck_form(request: Request, deck_id: int, user = Depends(require_
         "number_template_fields": number_template_fields,
         "merge_perks": merge_perks,
         "deck": dict(deck),
-        "cards": [dict(c) for c in cards]
+        "cards": [dict(c) for c in cards],
+        "active_section": "overview"
+    })
+
+@app.get("/deck/{deck_id}/card/new", response_class=HTMLResponse)
+async def add_card_page(request: Request, deck_id: int, user = Depends(require_admin)):
+    """Dedicated page for adding a new card to a deck"""
+    pool = await get_db_pool()
+    async with pool.acquire() as conn:
+        deck = await conn.fetchrow("SELECT * FROM decks WHERE deck_id = $1", deck_id)
+        if not deck:
+            raise HTTPException(status_code=404, detail="Deck not found")
+        if deck['created_by'] != user['id'] and not is_global_admin(user['id']):
+            raise HTTPException(status_code=403, detail="You don't own this deck")
+        if deck['disabled'] and not is_global_admin(user['id']):
+            return RedirectResponse(url=f"/deck/{deck_id}/view", status_code=303)
+        template_fields = await conn.fetch(
+            "SELECT * FROM card_templates WHERE deck_id = $1 ORDER BY field_order",
+            deck_id
+        )
+    return templates.TemplateResponse("add_card.html", {
+        "request": request,
+        "user": user,
+        "is_global_admin": is_global_admin(user['id']),
+        "deck": dict(deck),
+        "template_fields": template_fields,
+        "active_section": "add_card"
+    })
+
+@app.get("/deck/{deck_id}/merge-perks", response_class=HTMLResponse)
+async def merge_perks_page(request: Request, deck_id: int, user = Depends(require_admin)):
+    """Dedicated page for managing merge perks"""
+    pool = await get_db_pool()
+    async with pool.acquire() as conn:
+        deck = await conn.fetchrow("SELECT * FROM decks WHERE deck_id = $1", deck_id)
+        if not deck:
+            raise HTTPException(status_code=404, detail="Deck not found")
+        if deck['created_by'] != user['id'] and not is_global_admin(user['id']):
+            raise HTTPException(status_code=403, detail="You don't own this deck")
+        if deck['disabled'] and not is_global_admin(user['id']):
+            return RedirectResponse(url=f"/deck/{deck_id}/view", status_code=303)
+        number_template_fields = await conn.fetch(
+            "SELECT template_id, field_name FROM card_templates WHERE deck_id = $1 AND field_type = 'number' ORDER BY field_name",
+            deck_id
+        )
+        merge_perks = await conn.fetch(
+            "SELECT perk_name, base_boost, diminishing_factor FROM deck_merge_perks WHERE deck_id = $1 ORDER BY perk_name",
+            deck_id
+        )
+    return templates.TemplateResponse("merge_perks.html", {
+        "request": request,
+        "user": user,
+        "is_global_admin": is_global_admin(user['id']),
+        "deck": dict(deck),
+        "number_template_fields": number_template_fields,
+        "merge_perks": merge_perks,
+        "active_section": "merge_perks"
     })
 
 @app.post("/deck/{deck_id}/card/add")
@@ -1092,7 +1148,7 @@ async def add_merge_perk(
                 raise HTTPException(status_code=400, detail=f"Merge perk '{perk_name}' already exists for this deck")
             raise
     
-    return RedirectResponse(url=f"/deck/{deck_id}/edit", status_code=303)
+    return RedirectResponse(url=f"/deck/{deck_id}/merge-perks", status_code=303)
 
 @app.post("/deck/{deck_id}/merge_perk/{perk_name}/delete")
 async def delete_merge_perk(
@@ -1126,7 +1182,7 @@ async def delete_merge_perk(
             deck_id, perk_name
         )
     
-    return RedirectResponse(url=f"/deck/{deck_id}/edit", status_code=303)
+    return RedirectResponse(url=f"/deck/{deck_id}/merge-perks", status_code=303)
 
 @app.get("/deck/{deck_id}/activities", response_class=HTMLResponse)
 async def list_card_activities(request: Request, deck_id: int, user = Depends(require_admin)):
@@ -1160,7 +1216,8 @@ async def list_card_activities(request: Request, deck_id: int, user = Depends(re
         "user": user,
         "is_global_admin": is_global_admin(user['id']),
         "deck": dict(deck),
-        "activities": [dict(a) for a in activities]
+        "activities": [dict(a) for a in activities],
+        "active_section": "activities"
     })
 
 @app.get("/deck/{deck_id}/activity/new", response_class=HTMLResponse)
@@ -1197,7 +1254,8 @@ async def new_card_activity(request: Request, deck_id: int, user = Depends(requi
         "deck": dict(deck),
         "activity": None,
         "numeric_fields": [dict(f) for f in numeric_fields],
-        "rarity_scaling": None
+        "rarity_scaling": None,
+        "active_section": "activities"
     })
 
 @app.post("/deck/{deck_id}/activity/create")
@@ -1311,7 +1369,8 @@ async def edit_card_activity(request: Request, deck_id: int, mission_template_id
         "deck": dict(deck),
         "activity": dict(activity),
         "numeric_fields": [dict(f) for f in numeric_fields],
-        "rarity_scaling": rarity_scaling
+        "rarity_scaling": rarity_scaling,
+        "active_section": "activities"
     })
 
 @app.post("/deck/{deck_id}/activity/{mission_template_id}/update")
@@ -1477,7 +1536,8 @@ async def edit_card_form(request: Request, deck_id: int, card_id: int, user = De
         "deck": dict(deck),
         "card": dict(card),
         "template_fields": template_fields,
-        "field_values": field_values
+        "field_values": field_values,
+        "active_section": "overview"
     })
 
 @app.post("/deck/{deck_id}/card/{card_id}/update")
@@ -1611,7 +1671,8 @@ async def edit_cooldown(request: Request, deck_id: int, user = Depends(require_a
         "request": request,
         "user": user,
         "is_global_admin": is_global_admin(user['id']),
-        "deck": dict(deck)
+        "deck": dict(deck),
+        "active_section": "cooldown"
     })
 
 @app.post("/deck/{deck_id}/cooldown/update")
@@ -1685,7 +1746,8 @@ async def edit_rarity_rates(request: Request, deck_id: int, user = Depends(requi
         "user": user,
         "is_global_admin": is_global_admin(user['id']),
         "deck": dict(deck),
-        "rates": [dict(r) for r in rates]
+        "rates": [dict(r) for r in rates],
+        "active_section": "rarity"
     })
 
 @app.post("/deck/{deck_id}/rarity/update")

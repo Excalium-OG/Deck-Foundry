@@ -1,0 +1,42 @@
+Task:
+Refactor the DeckForge deck editing interface to reduce clutter and reorganize the editing workflow into a clear, multi‑page structure within the deck editing tree.
+1. Move “Add New Card” to its own page
+- Create a new route/page under the deck editing tree dedicated to adding a new card.
+- Move all existing card creation fields from the current deck editing page into this new page, including:
+- Card name
+- Rarity
+- Description
+- Card details (payload capacity, thrust, reusability, etc.)
+- Card image URL
+- Merge configuration (mergeable toggle, max merge level)
+- Add a confirmation button at the bottom of the page to finalize card creation.
+- After creation, redirect back to the deck’s main editing page or card list (whichever is appropriate in the current architecture).
+2. Move Merge Perks to its own page
+- Create a new “Merge Perks” page within the deck editing tree.
+- This page should function similarly to the existing “Card Activities” page:
+- Show a list of all merge perks for the deck.
+- Provide an “Add New Merge Perk” button that opens a form for creating a perk.
+- Allow editing existing merge perks.
+- Remove all merge perk UI elements from the main deck editing page.
+3. Add a left‑side navigation panel for deck editing
+- Introduce a left‑hand vertical navigation panel that appears only when the user is inside the deck editing tree.
+- The navigation panel should include:
+- Card Activities
+- Edit Cooldown
+- Edit Drop Rates
+- Add New Card
+- Merge Perks
+- Any other deck‑specific editing pages
+- These buttons should be removed from the main page body and consolidated into this left‑side navigation.
+4. Keep “Back to Dashboard” in the top‑right
+- Do not move this button into the left navigation.
+- It should remain in its current top‑right position for consistency with the rest of the site.
+5. General cleanup
+- Remove unused or redundant UI elements from the main deck editing page.
+- Ensure the main deck editing page now focuses only on high‑level deck settings (e.g., marketplace settings).
+- Ensure consistent styling across all new pages and the left navigation panel.
+6. Deliverables
+- Updated frontend components for all affected pages.
+- Updated routing to support the new page structure.
+- Removal of old inline card‑creation and merge‑perk UI from the main deck editing page.
+- Clean, maintainable code that matches the existing DeckForge style.
