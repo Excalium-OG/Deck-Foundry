@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}DeckForge Web Portal{% endblock %}</title>
-    <link rel="icon" type="image/png" href="/static/logo.png">
+    <link rel="icon" type="image/png" href="/static/logo 2.png">
     <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}?v=2026030201">
     <style>
         body {
@@ -107,7 +107,7 @@
 <body>
     <nav class="navbar">
         <div class="nav-container">
-            <a href="/" class="logo"><img src="/static/logo.png" alt="DeckForge logo">DeckForge</a>
+            <a href="/" class="logo"><img src="/static/logo 2.png" alt="DeckForge logo">DeckForge</a>
             <div class="nav-links">
                 {% if user %}
                 <a href="/dashboard" class="nav-link">Dashboard</a>
@@ -135,8 +135,9 @@
         {% block content %}{% endblock %}
     </main>
 
-    <footer>
-        <p>&copy; 2025 DeckForge | Custom Trading Card Decks</p>
+    <footer style="text-align:center;padding:1.5rem 2rem;color:rgba(255,255,255,0.5);font-size:0.85rem;">
+        &copy; 2025 DeckForge &nbsp;|&nbsp;
+        <a href="/terms" style="color:rgba(255,255,255,0.6);text-decoration:none;font-weight:600;">Terms of Use</a>
     </footer>
 
     {% block scripts %}{% endblock %}

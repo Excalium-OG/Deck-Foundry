@@ -183,6 +183,16 @@ async def home(request: Request):
         return RedirectResponse(url="/dashboard")
     return templates.TemplateResponse("login.html", {"request": request})
 
+@app.get("/terms", response_class=HTMLResponse)
+async def terms(request: Request):
+    """Terms of Use page"""
+    user = await get_current_user(request)
+    return templates.TemplateResponse("terms.html", {
+        "request": request,
+        "user": user,
+        "is_global_admin": is_global_admin(user['id']) if user else False
+    })
+
 @app.get("/login")
 async def login(request: Request):
     """Initiate Discord OAuth2 login with database-backed state"""
