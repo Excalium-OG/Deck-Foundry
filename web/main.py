@@ -941,7 +941,7 @@ async def edit_deck_form(request: Request, deck_id: int, user = Depends(require_
             deck_id
         )
     
-    template_field_ids = {tf['template_id'] for tf in template_fields}
+    required_field_ids = {tf['template_id'] for tf in template_fields if tf['is_required']}
     cards_list = []
     for card in cards:
         card_dict = dict(card)
@@ -957,9 +957,9 @@ async def edit_deck_form(request: Request, deck_id: int, user = Depends(require_
             fv = item.get('field_value')
             if tid is not None:
                 tv_map[tid] = fv
-        card_dict['has_issues'] = bool(template_field_ids) and any(
+        card_dict['has_issues'] = bool(required_field_ids) and any(
             tid not in tv_map or tv_map[tid] is None or str(tv_map[tid]).strip() == ''
-            for tid in template_field_ids
+            for tid in required_field_ids
         )
         cards_list.append(card_dict)
 
