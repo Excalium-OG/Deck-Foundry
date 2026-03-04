@@ -3,17 +3,18 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}DeckForge Admin Portal{% endblock %}</title>
+    <title>{% block title %}DeckForge Web Portal{% endblock %}</title>
+    <link rel="icon" type="image/png" href="/static/logo.png">
     <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}?v=2026030201">
     <style>
         body {
             margin: 0;
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg, #2E2E2E 0%, #2E2E2E 100%);
             min-height: 100vh;
         }
         .navbar {
-            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(90deg, #756434 0%, #876317 100%);
             box-shadow: 0 2px 8px rgba(0,0,0,0.25);
             padding: 0.85rem 0;
             position: sticky;
@@ -30,10 +31,17 @@
             gap: 1.5rem;
         }
         .logo {
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
             font-size: 1.5rem;
             font-weight: 700;
             color: white;
             text-decoration: none;
+        }
+        .logo img {
+            height: 42px;
+            width: auto;
         }
         .nav-links {
             display: flex;
@@ -99,7 +107,7 @@
 <body>
     <nav class="navbar">
         <div class="nav-container">
-            <a href="/" style="text-decoration:none;"><h1 class="logo">DeckForge</h1></a>
+            <a href="/" class="logo"><img src="/static/logo.png" alt="DeckForge logo">DeckForge</a>
             <div class="nav-links">
                 {% if user %}
                 <a href="/dashboard" class="nav-link">Dashboard</a>
