@@ -201,3 +201,4 @@ Deck-specific mission boards with competitive elements:
 - Added Elite Pack type (5 cards, Exceptional+ floor)
 - Added monthly reward distribution with automatic MP reset
 - Updated credit trading with `/tradeaddcredits` command (0-1M credits)
+- Added Terms of Use acceptance gate on first login: users must scroll through and accept terms before a session is created; acceptance stored in `terms_acceptances` table keyed by `(user_id, terms_version)`. Bump `TERMS_VERSION` constant in `web/main.py` to require re-acceptance from all users.

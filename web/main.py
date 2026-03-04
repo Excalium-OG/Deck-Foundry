@@ -100,6 +100,9 @@ async def get_current_user(request: Request) -> Optional[Dict]:
             }
     return None
 
+# Current terms version — increment this string to require all users to re-accept
+TERMS_VERSION = "1.0"
+
 # Admin IDs - mirrors bot.py fallback logic
 _ADMIN_IDS = [190506752112852992]
 _admin_ids_env = os.getenv("ADMIN_IDS", "")
@@ -193,6 +196,76 @@ async def terms(request: Request):
         "is_global_admin": is_global_admin(user['id']) if user else False
     })
 
+@app.get("/accept-terms", response_class=HTMLResponse)
+async def accept_terms_page(request: Request, token: str = ""):
+    """Show terms acceptance page for users completing first login"""
+    if not token:
+        return RedirectResponse(url="/")
+    pool = await get_db_pool()
+    async with pool.acquire() as conn:
+        pending = await conn.fetchrow(
+            "SELECT * FROM pending_logins WHERE token = $1 AND expires_at > NOW()",
+            token
+        )
+    if not pending:
+        return RedirectResponse(url="/?error=session_expired")
+    return templates.TemplateResponse("accept_terms.html", {
+        "request": request,
+        "user": None,
+        "is_global_admin": False,
+        "pending_token": token,
+        "terms_version": TERMS_VERSION
+    })
+
+@app.post("/accept-terms")
+async def accept_terms_submit(request: Request, token: str = Form(...), accepted: str = Form(None)):
+    """Process terms acceptance, complete login, and redirect to dashboard"""
+    if accepted != "yes":
+        return RedirectResponse(url=f"/accept-terms?token={token}&error=must_accept", status_code=303)
+
+    pool = await get_db_pool()
+    async with pool.acquire() as conn:
+        pending = await conn.fetchrow(
+            "SELECT * FROM pending_logins WHERE token = $1 AND expires_at > NOW()",
+            token
+        )
+        if not pending:
+            return RedirectResponse(url="/?error=session_expired", status_code=303)
+
+        async with conn.transaction():
+            # Record acceptance
+            await conn.execute(
+                """INSERT INTO terms_acceptances (user_id, terms_version)
+                   VALUES ($1, $2) ON CONFLICT DO NOTHING""",
+                pending['user_id'], TERMS_VERSION
+            )
+            # Create the real session
+            session_id = secrets.token_urlsafe(32)
+            await conn.execute(
+                """INSERT INTO user_sessions
+                   (session_id, user_id, username, discriminator, avatar, access_token)
+                   VALUES ($1, $2, $3, $4, $5, $6)""",
+                session_id,
+                pending['user_id'],
+                pending['username'],
+                pending['discriminator'],
+                pending['avatar'],
+                pending['access_token']
+            )
+            # Clean up the pending login
+            await conn.execute("DELETE FROM pending_logins WHERE token = $1", token)
+
+    response = RedirectResponse(url="/dashboard", status_code=303)
+    response.set_cookie(
+        key="session_id",
+        value=session_id,
+        max_age=7*24*60*60,
+        httponly=True,
+        secure=True,
+        samesite="none"
+    )
+    return response
+
 @app.get("/login")
 async def login(request: Request):
     """Initiate Discord OAuth2 login with database-backed state"""
@@ -278,7 +351,33 @@ async def auth_callback(request: Request):
             
             user_data = user_response.json()
         
-        # Create session in database
+        user_id = int(user_data['id'])
+
+        # Check if user has accepted the current terms version
+        async with pool.acquire() as conn:
+            accepted = await conn.fetchval(
+                "SELECT 1 FROM terms_acceptances WHERE user_id = $1 AND terms_version = $2",
+                user_id, TERMS_VERSION
+            )
+
+        if not accepted:
+            # Store OAuth data temporarily and send user to terms acceptance page
+            pending_token = secrets.token_urlsafe(32)
+            async with pool.acquire() as conn:
+                await conn.execute(
+                    """INSERT INTO pending_logins
+                       (token, user_id, username, discriminator, avatar, access_token)
+                       VALUES ($1, $2, $3, $4, $5, $6)""",
+                    pending_token,
+                    user_id,
+                    user_data['username'],
+                    user_data.get('discriminator', '0'),
+                    user_data.get('avatar'),
+                    access_token
+                )
+            return RedirectResponse(url=f"/accept-terms?token={pending_token}")
+
+        # Terms already accepted — create session and log in
         session_id = secrets.token_urlsafe(32)
         async with pool.acquire() as conn:
             await conn.execute(
@@ -286,7 +385,7 @@ async def auth_callback(request: Request):
                    (session_id, user_id, username, discriminator, avatar, access_token)
                    VALUES ($1, $2, $3, $4, $5, $6)""",
                 session_id,
-                int(user_data['id']),
+                user_id,
                 user_data['username'],
                 user_data.get('discriminator', '0'),
                 user_data.get('avatar'),
