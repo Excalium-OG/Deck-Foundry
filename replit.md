@@ -202,3 +202,4 @@ Deck-specific mission boards with competitive elements:
 - Added monthly reward distribution with automatic MP reset
 - Updated credit trading with `/tradeaddcredits` command (0-1M credits)
 - Added Terms of Use acceptance gate on first login: users must scroll through and accept terms before a session is created; acceptance stored in `terms_acceptances` table keyed by `(user_id, terms_version)`. Bump `TERMS_VERSION` constant in `web/main.py` to require re-acceptance from all users.
+- Added PvP Duel System: `/duel @opponent` and `/pvpleaderboard` commands in `cogs/pvp.py`. Score = RNG(0.5–1.5) × (RarityPower + MergePower + AttributePower). Stakes (credits/cards/both/none) and VP leaderboard configurable per deck via Activities page PvP Settings section (`/deck/{id}/pvp-settings` POST route). Migration 0021 adds `pvp_enabled`, `pvp_attribute`, `allow_no_stake`, `vp_enabled` to decks and `pvp_vp` to `player_deck_state`.

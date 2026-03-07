@@ -1,0 +1,152 @@
+Implement a Simple PvP system for DeckForge, including deck‑creator configuration on the web dashboard and the complete Discord duel flow using embeds + components. The system must be clean, guided, and require only one typed command from players: /duel.
+
+🧱 PART 1 — Deck Creator PvP Configuration (Web Dashboard)
+Add a new section to the deck creator’s “Card Activities” page:
+1. PvP Toggle
+- Checkbox: Enable PvP for this deck
+- When unchecked → PvP is disabled for all cards in this deck
+- When checked → reveal additional PvP configuration options
+2. Attribute Selection
+When PvP is enabled:
+- Dropdown: Select PvP Attribute
+- Shows all numeric attributes defined for this deck (e.g., Strength, Payload, Attack, Speed)
+- This attribute will be used in the PvP power calculation
+3. Optional PvP Settings
+Add the following toggles:
+- Allow No‑Stake Duels (default: false)
+- Enable VP Leaderboard (default: true)
+4. Backend Storage
+Store the following in the deck’s configuration:
+pvp_enabled: boolean
+pvp_attribute: string
+allow_no_stake: boolean
+vp_enabled: boolean
+
+
+
+⚔️ PART 2 — PvP Power Calculation
+Use a single weighted roll:
+FinalScore Formula
+FinalScore = RNG(0.5–1.5) * (RarityPower + MergePower + AttributePower)
+
+
+RarityPower
+Use fixed values:
+- Common: 100
+- Uncommon: 150
+- Exceptional: 225
+- Rare: 325
+- Epic: 475
+- Legendary: 700
+- Mythic: 1000
+MergePower
+Quadratic scaling:
+MergePower = 15 * (stars^2)
+
+
+AttributePower
+Normalize attribute to 0–100:
+AttributePower = (card_attribute_value / deck_max_attribute_value) * 100
+
+
+
+🎮 PART 3 — Discord PvP Flow Using /duel
+Implement a single-command duel system using embeds + components.
+All interactions after /duel must use buttons, dropdowns, or modals.
+
+Step 1 — Player starts duel
+Command:
+/duel opponent:@User
+
+
+Bot sends a public embed:
+Embed: Duel Request
+- Challenger: Player A
+- Opponent: Player B
+- Challenger Card: Not selected
+- Opponent Card: Waiting for accept
+- Stakes: Not set
+- Status: Awaiting acceptance
+Components:
+- Accept Duel (button)
+- Decline (button)
+Challenger receives an ephemeral dropdown to select their card immediately.
+
+Step 2 — Opponent accepts + selects card
+When opponent clicks Accept, they receive an ephemeral dropdown:
+“Choose your card for this duel”
+After selection, update embed:
+- Challenger Card: Locked (hidden)
+- Opponent Card: Locked (hidden)
+- Stakes: Not set
+- Status: Both players must stake
+
+Step 3 — Staking Phase (private, symmetric, scam‑proof)
+Each player receives an ephemeral stake menu:
+Stake Type (dropdown):
+- Credits
+- Card
+- Both
+- No stake (only if deck allows)
+If credits → open modal for numeric input
+If card → dropdown of eligible cards
+If both → show both inputs
+Players submit stakes privately.
+Do not reveal stakes until both players have submitted.
+Embed updates to:
+- Stakes: Hidden until both players submit
+- Status: Waiting for both players to stake
+When both are ready, reveal stakes simultaneously:
+- Challenger Stake: X
+- Opponent Stake: Y
+- Status: Both players must confirm
+Components:
+- Confirm Duel
+- Cancel Duel
+
+Step 4 — Confirmation Phase
+Both players must click Confirm Duel.
+If either cancels:
+- Duel ends
+- Stakes returned
+- Embed updates to “Duel canceled”
+
+Step 5 — Battle Resolution
+Compute FinalScore for both cards using the formula above.
+Update embed:
+Embed: Duel Results
+- Challenger Score: ####
+- Opponent Score: ####
+- Winner: Player
+- Stakes: Transferred
+- VP Earned: (if enabled)
+No components after this.
+
+🧩 PART 4 — Additional Requirements
+Mission‑Locked Cards
+- Cannot be selected for duels
+- Cannot be staked
+- If a card becomes locked mid‑duel, cancel duel and return stakes
+Timeouts
+- Each phase should auto‑cancel after 2 minutes of inactivity
+State Tracking
+Store duel state per channel or per user pair:
+phase: "await_accept" | "card_select" | "staking" | "confirm" | "resolved"
+challenger_id
+opponent_id
+challenger_card
+opponent_card
+challenger_stake
+opponent_stake
+deck_config
+
+
+
+🏁 Deliverables
+Implement:
+- Deck creator PvP configuration UI + backend storage
+- PvP power calculation functions
+- Full /duel command flow with embeds + components
+- Duel state machine
+- Stake validation + mission lock checks
+- Final result embed + VP calculation

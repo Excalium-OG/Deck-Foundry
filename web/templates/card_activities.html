@@ -49,6 +49,12 @@
     Configure a Mission Channel in server settings to enable automatic mission spawning.
   </div>
 
+  {% if request.query_params.get('pvp_saved') %}
+  <div style="background:#d1fae5;color:#065f46;border:1px solid #10b981;padding:0.65rem 1rem;border-radius:7px;margin-bottom:1rem;font-size:0.9rem;">
+    PvP settings saved.
+  </div>
+  {% endif %}
+
   {% if activities %}
   <div style="margin-top:1.25rem;">
     {% for activity in activities %}
@@ -100,5 +106,78 @@
   {% else %}
   <p class="df-empty-state">No card activities configured yet. Add your first activity to enable missions!</p>
   {% endif %}
+</div>
+
+<div class="deck-content-card" style="margin-top:1.5rem;">
+  <h3 style="margin:0 0 1rem;color:#374151;font-size:1.05rem;">⚔️ PvP Settings</h3>
+
+  <div class="df-info-box" style="margin-bottom:1.25rem;">
+    <strong>About PvP:</strong> When enabled, players can challenge each other to card duels using
+    <code>/duel @user</code>. A selected numeric attribute is used in the power formula alongside
+    rarity and merge level.
+  </div>
+
+  <form method="POST" action="/deck/{{ deck.deck_id }}/pvp-settings">
+    <div class="df-form-group">
+      <label style="display:flex;align-items:center;gap:0.5rem;cursor:pointer;font-weight:600;">
+        <input type="checkbox" name="pvp_enabled" value="1"
+               id="pvp-toggle"
+               onchange="document.getElementById('pvp-options').style.display=this.checked?'block':'none'"
+               {% if deck.get('pvp_enabled') %}checked{% endif %}>
+        Enable PvP duels for this deck
+      </label>
+      <small style="color:#6b7280;font-size:0.85rem;margin-top:0.25rem;display:block;">
+        Allows players to use /duel in servers assigned to this deck.
+      </small>
+    </div>
+
+    <div id="pvp-options" {% if not deck.get('pvp_enabled') %}style="display:none;"{% endif %}>
+      <div class="df-form-group">
+        <label for="pvp-attr" style="font-weight:600;">PvP Attribute *</label>
+        <select name="pvp_attribute" id="pvp-attr">
+          <option value="">-- Select a numeric attribute --</option>
+          {% for f in number_template_fields %}
+          <option value="{{ f.field_name }}"
+                  {% if deck.get('pvp_attribute') == f.field_name %}selected{% endif %}>
+            {{ f.field_name }}
+          </option>
+          {% endfor %}
+        </select>
+        {% if not number_template_fields %}
+        <small style="color:#dc2626;">
+          No numeric attributes defined. Add one in <a href="/deck/{{ deck.deck_id }}/template">Card Template</a>.
+        </small>
+        {% else %}
+        <small style="color:#6b7280;">This attribute is factored into each card's duel power score.</small>
+        {% endif %}
+      </div>
+
+      <div class="df-form-group">
+        <label style="display:flex;align-items:center;gap:0.5rem;cursor:pointer;">
+          <input type="checkbox" name="allow_no_stake" value="1"
+                 {% if deck.get('allow_no_stake') %}checked{% endif %}>
+          Allow No-Stake duels
+        </label>
+        <small style="color:#6b7280;font-size:0.85rem;">
+          When enabled, players may choose not to wager anything.
+        </small>
+      </div>
+
+      <div class="df-form-group">
+        <label style="display:flex;align-items:center;gap:0.5rem;cursor:pointer;">
+          <input type="checkbox" name="vp_enabled" value="1"
+                 {% if deck.get('vp_enabled', True) %}checked{% endif %}>
+          Enable VP Leaderboard
+        </label>
+        <small style="color:#6b7280;font-size:0.85rem;">
+          Winners earn Victory Points. Use /pvpleaderboard to see rankings.
+        </small>
+      </div>
+    </div>
+
+    <div style="margin-top:1rem;">
+      <button type="submit" class="df-btn df-btn-primary df-btn-sm">Save PvP Settings</button>
+    </div>
+  </form>
 </div>
 {% endblock %}

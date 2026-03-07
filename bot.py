@@ -67,6 +67,7 @@ class DeckForgeBot(commands.Bot):
         await self.load_extension('cogs.missions')  # Mission system
         await self.load_extension('cogs.future')
         await self.load_extension('cogs.slash_commands')  # Slash command support
+        await self.load_extension('cogs.pvp')             # PvP duel system
         print("✅ Loaded all cogs")
     
     async def run_migrations(self):
@@ -90,7 +91,9 @@ class DeckForgeBot(commands.Bot):
             'db/migrations/0016_user_inventory.sql',
             'db/migrations/0017_trade_credits.sql',
             'db/migrations/0018_mission_points.sql',
-            'db/migrations/0019_admin_audit.sql'
+            'db/migrations/0019_admin_audit.sql',
+            'db/migrations/0020_terms_acceptance.sql',
+            'db/migrations/0021_pvp.sql',
         ]
         
         async with self.db_pool.acquire() as conn:

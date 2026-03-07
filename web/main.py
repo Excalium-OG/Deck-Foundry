@@ -1391,6 +1391,10 @@ async def list_card_activities(request: Request, deck_id: int, user = Depends(re
                ORDER BY created_at DESC""",
             deck_id
         )
+        number_template_fields = await conn.fetch(
+            "SELECT template_id, field_name FROM card_templates WHERE deck_id = $1 AND field_type = 'number' ORDER BY field_name",
+            deck_id
+        )
     
     return templates.TemplateResponse("card_activities.html", {
         "request": request,
@@ -1398,8 +1402,38 @@ async def list_card_activities(request: Request, deck_id: int, user = Depends(re
         "is_global_admin": is_global_admin(user['id']),
         "deck": dict(deck),
         "activities": [dict(a) for a in activities],
+        "number_template_fields": number_template_fields,
         "active_section": "activities"
     })
+
+@app.post("/deck/{deck_id}/pvp-settings")
+async def update_pvp_settings(request: Request, deck_id: int, user = Depends(require_admin)):
+    """Save PvP configuration for a deck"""
+    form_data = await request.form()
+    pvp_enabled  = form_data.get('pvp_enabled')  == '1'
+    pvp_attribute = (form_data.get('pvp_attribute') or '').strip() or None
+    allow_no_stake = form_data.get('allow_no_stake') == '1'
+    vp_enabled   = form_data.get('vp_enabled')   == '1'
+
+    pool = await get_db_pool()
+    async with pool.acquire() as conn:
+        deck = await conn.fetchrow("SELECT created_by, disabled FROM decks WHERE deck_id = $1", deck_id)
+        if not deck:
+            raise HTTPException(status_code=404, detail="Deck not found")
+        if deck['created_by'] != user['id'] and not is_global_admin(user['id']):
+            raise HTTPException(status_code=403, detail="You don't own this deck")
+        if check_deck_disabled(deck, user['id']):
+            raise HTTPException(status_code=403, detail="This deck has been disabled")
+
+        await conn.execute(
+            """UPDATE decks
+               SET pvp_enabled = $1, pvp_attribute = $2,
+                   allow_no_stake = $3, vp_enabled = $4
+               WHERE deck_id = $5""",
+            pvp_enabled, pvp_attribute, allow_no_stake, vp_enabled, deck_id,
+        )
+    return RedirectResponse(url=f"/deck/{deck_id}/activities?pvp_saved=1", status_code=303)
+
 
 @app.get("/deck/{deck_id}/activity/new", response_class=HTMLResponse)
 async def new_card_activity(request: Request, deck_id: int, user = Depends(require_admin)):
