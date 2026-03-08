@@ -51,6 +51,7 @@ class MergeCommands(commands.Cog):
         
         deck_id = deck['deck_id']
         
+        locked_list = list(getattr(self.bot, 'pvp_locked_cards', set()))
         async with self.db_pool.acquire() as conn:
             # Get cards the player has 2+ of at the same merge level AND locked perk
             # For level 0 cards, locked_perk will be NULL and they can merge together
@@ -69,11 +70,12 @@ class MergeCommands(commands.Cog):
                   AND c.deck_id = $2
                   AND uc.recycled_at IS NULL
                   AND c.mergeable = TRUE
+                  AND NOT (uc.instance_id::text = ANY($3::text[]))
                 GROUP BY c.card_id, c.name, uc.merge_level, uc.locked_perk
                 HAVING COUNT(*) >= 2
                 ORDER BY c.name, uc.merge_level
                 """,
-                user_id, deck_id
+                user_id, deck_id, locked_list
             )
             
             # Build choices with merge level and perk indicator
@@ -289,6 +291,10 @@ class MergeCommands(commands.Cog):
                     user_id, card_id
                 )
             
+            # Filter out PvP-locked instances
+            pvp_locked = getattr(self.bot, 'pvp_locked_cards', set())
+            instances = [i for i in instances if str(i['instance_id']) not in pvp_locked]
+
             if len(instances) < 2:
                 # Build helpful error message
                 if target_merge_level is not None and target_locked_perk:

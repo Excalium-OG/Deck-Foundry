@@ -24,7 +24,7 @@ RARITY_POWER = {
 }
 RARITY_SORT = ['Common', 'Uncommon', 'Exceptional', 'Rare', 'Epic', 'Legendary', 'Mythic']
 
-PHASE_TIMEOUT = 120  # seconds per phase
+PHASE_TIMEOUT = 300  # seconds per phase (5 minutes)
 
 
 # ---------------------------------------------------------------------------
@@ -64,6 +64,9 @@ class DuelState:
     # Confirmation
     challenger_confirmed: bool = False
     opponent_confirmed: bool = False
+
+    # Cards locked for this duel (instance_id strings)
+    locked_instance_ids: set = field(default_factory=set)
 
     # Timeout task reference
     timeout_task: Optional[asyncio.Task] = None
@@ -421,6 +424,9 @@ class CardSelectView(discord.ui.View):
             duel.opponent_card = card_data
             duel.opponent_followup = interaction.followup
 
+        # Lock this card so it can't be traded, recycled, or sent on a mission
+        self.cog._lock_card(duel, instance_id)
+
         stars = f' ⭐×{card_data["merge_level"]}' if card_data['merge_level'] > 0 else ''
         await interaction.response.edit_message(
             content=f'✅ **{card_data["name"]}{stars}** selected. Waiting for the other player…',
@@ -655,6 +661,9 @@ class CardStakeSelectView(discord.ui.View):
             duel.opponent_stake_type = self.stake_type
             duel.opponent_stake_done  = True
 
+        # Lock the staked card so it can't be used elsewhere until the duel resolves
+        self.cog._lock_card(duel, instance_id)
+
         await interaction.response.edit_message(
             content=f'✅ **{card_data["name"]}** staked. Waiting for opponent…', view=None
         )
@@ -740,10 +749,20 @@ class PvPCommands(commands.Cog):
     def _duel_key(self, a: int, b: int) -> frozenset:
         return frozenset({a, b})
 
+    def _lock_card(self, duel: DuelState, instance_id: str):
+        self.bot.pvp_locked_cards.add(instance_id)
+        duel.locked_instance_ids.add(instance_id)
+
+    def _unlock_duel_cards(self, duel: DuelState):
+        self.bot.pvp_locked_cards -= duel.locked_instance_ids
+        duel.locked_instance_ids.clear()
+
     def _end_duel(self, duel_key: frozenset):
         duel = self.active_duels.pop(duel_key, None)
-        if duel and duel.timeout_task and not duel.timeout_task.done():
-            duel.timeout_task.cancel()
+        if duel:
+            self._unlock_duel_cards(duel)
+            if duel.timeout_task and not duel.timeout_task.done():
+                duel.timeout_task.cancel()
 
     def _reset_timeout(self, duel: DuelState, duel_key: frozenset):
         if duel.timeout_task and not duel.timeout_task.done():
@@ -836,6 +855,7 @@ class PvPCommands(commands.Cog):
         duel = self.active_duels.pop(duel_key, None)
         if not duel:
             return
+        self._unlock_duel_cards(duel)
         if duel.timeout_task and not duel.timeout_task.done():
             duel.timeout_task.cancel()
         duel.phase = 'resolved'

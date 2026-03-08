@@ -616,6 +616,14 @@ class MissionCommands(commands.Cog):
                     f"Need: {mission['requirement_field']} >= {mission['requirement_rolled']:,.0f}"
                 )
                 return
+
+            # Check if the qualifying card is locked in an active PvP duel
+            locked = getattr(self.bot, 'pvp_locked_cards', set())
+            if str(qualifying_card['instance_id']) in locked:
+                await ctx.send(
+                    f"❌ **{qualifying_card['name']}** is locked in an active duel and cannot be sent on a mission right now."
+                )
+                return
             
             now = datetime.now(timezone.utc)
             mission_end = now + timedelta(hours=mission['duration_rolled_hours'])

@@ -42,6 +42,7 @@ class DeckForgeBot(commands.Bot):
         
         self.db_pool = None
         self.admin_ids = ADMIN_IDS
+        self.pvp_locked_cards: set[str] = set()
     
     async def setup_hook(self):
         """Setup database and load cogs"""
