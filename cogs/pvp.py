@@ -156,11 +156,16 @@ def _build_embed(duel: DuelState) -> discord.Embed:
 
 async def _get_eligible_cards(conn, user_id: int, deck_id: int,
                                exclude_ids: set = None) -> list:
-    """Cards the player owns in this deck that are not mission-locked."""
+    """Cards the player owns in this deck that are not mission-locked.
+    Duplicate cards (same card_id + merge level) are collapsed into one entry
+    with a 'count' field so the dropdown shows 'Card (x3)' instead of three rows."""
+    exclude_list = list(exclude_ids) if exclude_ids else []
     rows = await conn.fetch(
         """
-        SELECT uc.instance_id::text AS instance_id,
-               c.name, c.rarity, COALESCE(uc.merge_level, 0) AS merge_level,
+        SELECT MIN(uc.instance_id::text) AS instance_id,
+               c.name, c.rarity,
+               COALESCE(uc.merge_level, 0) AS merge_level,
+               COUNT(*) AS count,
                CASE c.rarity
                  WHEN 'Mythic'      THEN 7
                  WHEN 'Legendary'   THEN 6
@@ -174,6 +179,7 @@ async def _get_eligible_cards(conn, user_id: int, deck_id: int,
         JOIN cards c ON uc.card_id = c.card_id
         WHERE uc.user_id = $1
           AND c.deck_id  = $2
+          AND NOT (uc.instance_id::text = ANY($3::text[]))
           AND uc.instance_id::text NOT IN (
               SELECT card_instance_id::text
               FROM active_missions
@@ -181,15 +187,13 @@ async def _get_eligible_cards(conn, user_id: int, deck_id: int,
                 AND started_at IS NOT NULL
                 AND card_instance_id IS NOT NULL
           )
-        ORDER BY rarity_order DESC, uc.merge_level DESC, c.name
+        GROUP BY c.card_id, c.name, c.rarity, COALESCE(uc.merge_level, 0)
+        ORDER BY rarity_order DESC, COALESCE(uc.merge_level, 0) DESC, c.name
         LIMIT 25
         """,
-        user_id, deck_id
+        user_id, deck_id, exclude_list
     )
-    cards = [dict(r) for r in rows]
-    if exclude_ids:
-        cards = [c for c in cards if c['instance_id'] not in exclude_ids]
-    return cards[:25]
+    return [dict(r) for r in rows]
 
 
 async def _calculate_score(conn, instance_id: str, deck_id: int,
@@ -284,7 +288,9 @@ def _card_select_options(cards: list) -> list[discord.SelectOption]:
     options = []
     for c in cards[:25]:
         stars = f' ⭐×{c["merge_level"]}' if c.get('merge_level', 0) > 0 else ''
-        label = f'{c["name"]}{stars}'[:100]
+        count = c.get('count', 1)
+        count_str = f' (x{count})' if count > 1 else ''
+        label = f'{c["name"]}{stars}{count_str}'[:100]
         options.append(discord.SelectOption(
             label=label,
             value=c['instance_id'],
