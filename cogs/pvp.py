@@ -998,34 +998,50 @@ class PvPCommands(commands.Cog):
             challenger_id=ctx.author.id,
             opponent_id=opponent.id,
         )
-        self.active_duels[duel_key] = duel
 
         accept_view = DuelAcceptView(self, duel_key)
         embed = _build_embed(duel)
 
         if ctx.interaction:
-            await ctx.defer()
-            msg = await ctx.channel.send(
-                f'{ctx.author.mention} challenges {opponent.mention} to a duel!',
-                embed=embed, view=accept_view,
-            )
-            duel.message_id = msg.id
-            # Send ephemeral card select to challenger
-            opts = _card_select_options(ch_cards)
-            card_view = CardSelectView(self, duel_key, ctx.author.id, opts)
-            duel.challenger_followup = ctx.interaction.followup
-            await ctx.interaction.followup.send(
-                'Choose your card for this duel:', view=card_view, ephemeral=True
-            )
+            # Register duel before sending so the view can look it up immediately.
+            # Clean up on any error so the players are not stuck.
+            self.active_duels[duel_key] = duel
+            try:
+                # Use the interaction response directly — this works even in channels
+                # where the bot has slash-command access but not SEND_MESSAGES.
+                await ctx.interaction.response.send_message(
+                    f'{ctx.author.mention} challenges {opponent.mention} to a duel!',
+                    embed=embed, view=accept_view,
+                )
+                original = await ctx.interaction.original_response()
+                duel.message_id = original.id
+                # Send ephemeral card select to challenger
+                opts = _card_select_options(ch_cards)
+                card_view = CardSelectView(self, duel_key, ctx.author.id, opts)
+                duel.challenger_followup = ctx.interaction.followup
+                await ctx.interaction.followup.send(
+                    'Choose your card for this duel:', view=card_view, ephemeral=True
+                )
+            except Exception:
+                self.active_duels.pop(duel_key, None)
+                raise
         else:
-            msg = await ctx.send(
-                f'{ctx.author.mention} challenges {opponent.mention} to a duel!',
-                embed=embed, view=accept_view,
-            )
-            duel.message_id = msg.id
-            await ctx.author.send(
-                'Choose your card via the slash command `/duel` for full duel features.'
-            )
+            self.active_duels[duel_key] = duel
+            try:
+                msg = await ctx.send(
+                    f'{ctx.author.mention} challenges {opponent.mention} to a duel!',
+                    embed=embed, view=accept_view,
+                )
+                duel.message_id = msg.id
+                try:
+                    await ctx.author.send(
+                        'Choose your card via the slash command `/duel` for full duel features.'
+                    )
+                except discord.Forbidden:
+                    pass
+            except Exception:
+                self.active_duels.pop(duel_key, None)
+                raise
 
         duel.timeout_task = asyncio.create_task(self._run_timeout(duel_key))
 
