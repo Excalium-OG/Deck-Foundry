@@ -182,6 +182,7 @@ async def _get_eligible_cards(conn, user_id: int, deck_id: int,
         JOIN cards c ON uc.card_id = c.card_id
         WHERE uc.user_id = $1
           AND c.deck_id  = $2
+          AND uc.recycled_at IS NULL
           AND NOT (uc.instance_id::text = ANY($3::text[]))
           AND uc.instance_id::text NOT IN (
               SELECT card_instance_id::text
