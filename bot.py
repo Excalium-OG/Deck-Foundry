@@ -95,6 +95,7 @@ class DeckForgeBot(commands.Bot):
             'db/migrations/0019_admin_audit.sql',
             'db/migrations/0020_terms_acceptance.sql',
             'db/migrations/0021_pvp.sql',
+            'db/migrations/0022_mission_card_attribute_optional.sql',
         ]
         
         async with self.db_pool.acquire() as conn:

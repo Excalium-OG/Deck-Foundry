@@ -1480,8 +1480,9 @@ async def create_card_activity(
     name: str = Form(...),
     activity_type: str = Form("mission"),
     description: str = Form(None),
-    requirement_field: str = Form(...),
-    min_value_base: float = Form(...),
+    require_card_attribute: Optional[str] = Form(None),
+    requirement_field: Optional[str] = Form(None),
+    min_value_base: float = Form(0.0),
     reward_base: int = Form(...),
     duration_base_hours: int = Form(48),
     variance_pct: float = Form(5.0),
@@ -1507,15 +1508,22 @@ async def create_card_activity(
         if check_deck_disabled(deck, user['id']):
             raise HTTPException(status_code=403, detail="This deck has been disabled by an administrator")
         
+        req_attr = require_card_attribute == '1'
+        if not req_attr:
+            requirement_field = None
+            min_value_base = 0.0
+
         async with conn.transaction():
             result = await conn.fetchrow(
                 """INSERT INTO mission_templates 
-                   (deck_id, name, activity_type, description, requirement_field, 
-                    min_value_base, reward_base, duration_base_hours, variance_pct, is_active, created_by)
-                   VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+                   (deck_id, name, activity_type, description, require_card_attribute,
+                    requirement_field, min_value_base, reward_base, duration_base_hours,
+                    variance_pct, is_active, created_by)
+                   VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
                    RETURNING mission_template_id""",
-                deck_id, name, activity_type, description, requirement_field,
-                min_value_base, reward_base, duration_base_hours, variance_pct, is_active, user['id']
+                deck_id, name, activity_type, description, req_attr,
+                requirement_field, min_value_base, reward_base, duration_base_hours,
+                variance_pct, is_active, user['id']
             )
             
             mission_template_id = result['mission_template_id']
@@ -1596,8 +1604,9 @@ async def update_card_activity(
     name: str = Form(...),
     activity_type: str = Form("mission"),
     description: str = Form(None),
-    requirement_field: str = Form(...),
-    min_value_base: float = Form(...),
+    require_card_attribute: Optional[str] = Form(None),
+    requirement_field: Optional[str] = Form(None),
+    min_value_base: float = Form(0.0),
     reward_base: int = Form(...),
     duration_base_hours: int = Form(48),
     variance_pct: float = Form(5.0),
@@ -1631,14 +1640,20 @@ async def update_card_activity(
         if not activity:
             raise HTTPException(status_code=404, detail="Activity not found")
         
+        req_attr = require_card_attribute == '1'
+        if not req_attr:
+            requirement_field = None
+            min_value_base = 0.0
+
         async with conn.transaction():
             await conn.execute(
                 """UPDATE mission_templates 
-                   SET name = $1, activity_type = $2, description = $3, requirement_field = $4,
-                       min_value_base = $5, reward_base = $6, duration_base_hours = $7, 
-                       variance_pct = $8, is_active = $9, updated_at = NOW()
-                   WHERE mission_template_id = $10""",
-                name, activity_type, description, requirement_field,
+                   SET name = $1, activity_type = $2, description = $3,
+                       require_card_attribute = $4, requirement_field = $5,
+                       min_value_base = $6, reward_base = $7, duration_base_hours = $8, 
+                       variance_pct = $9, is_active = $10, updated_at = NOW()
+                   WHERE mission_template_id = $11""",
+                name, activity_type, description, req_attr, requirement_field,
                 min_value_base, reward_base, duration_base_hours, variance_pct, is_active,
                 mission_template_id
             )

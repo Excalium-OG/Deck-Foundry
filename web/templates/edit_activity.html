@@ -80,27 +80,38 @@
 
     <div class="act-section">
       <h3>Mission Parameters (Mythic Baseline)</h3>
-      <div class="df-form-row">
-        <div class="df-form-group">
-          <label for="requirement_field">Requirement Attribute *</label>
-          <select id="requirement_field" name="requirement_field" required>
-            <option value="">Select an attribute...</option>
-            {% for field in numeric_fields %}
-            <option value="{{ field.field_name }}"
-                    {% if activity and activity.requirement_field == field.field_name %}selected{% endif %}>
-              {{ field.field_name }}
-            </option>
-            {% endfor %}
-          </select>
-          <small>Card attribute that must meet the minimum value</small>
+      <div class="df-form-group">
+        <div class="checkbox-group">
+          <input type="checkbox" id="require_card_attribute" name="require_card_attribute" value="1"
+                 onchange="toggleAttrRequirement(this.checked)"
+                 {% if not activity or activity.get('require_card_attribute', True) %}checked{% endif %}>
+          <label for="require_card_attribute" style="margin-bottom:0;font-weight:600;color:#374151;">Require card attribute</label>
         </div>
-        <div class="df-form-group">
-          <label for="min_value_base">Minimum Value (Mythic) *</label>
-          <input type="number" id="min_value_base" name="min_value_base" required
-                 step="0.01" min="0"
-                 value="{{ activity.min_value_base if activity else '' }}"
-                 placeholder="e.g., 85000">
-          <small>Minimum attribute value for Mythic-tier missions</small>
+        <small>When enabled, only cards meeting the attribute minimum can be used for this mission</small>
+      </div>
+      <div id="attr-requirement-fields" {% if activity and not activity.get('require_card_attribute', True) %}style="display:none;"{% endif %}>
+        <div class="df-form-row">
+          <div class="df-form-group">
+            <label for="requirement_field">Requirement Attribute</label>
+            <select id="requirement_field" name="requirement_field">
+              <option value="">Select an attribute...</option>
+              {% for field in numeric_fields %}
+              <option value="{{ field.field_name }}"
+                      {% if activity and activity.requirement_field == field.field_name %}selected{% endif %}>
+                {{ field.field_name }}
+              </option>
+              {% endfor %}
+            </select>
+            <small>Card attribute that must meet the minimum value</small>
+          </div>
+          <div class="df-form-group">
+            <label for="min_value_base">Minimum Value (Mythic)</label>
+            <input type="number" id="min_value_base" name="min_value_base"
+                   step="0.01" min="0"
+                   value="{{ activity.min_value_base if activity else '' }}"
+                   placeholder="e.g., 85000">
+            <small>Minimum attribute value for Mythic-tier missions</small>
+          </div>
         </div>
       </div>
       <div class="df-form-row">
@@ -183,4 +194,9 @@
     </div>
   </form>
 </div>
+<script>
+function toggleAttrRequirement(enabled) {
+  document.getElementById('attr-requirement-fields').style.display = enabled ? '' : 'none';
+}
+</script>
 {% endblock %}

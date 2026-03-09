@@ -72,7 +72,11 @@
         <div class="activity-details">
           <div class="activity-detail">
             <span>Requirement</span>
+            {% if activity.get('require_card_attribute', True) and activity.requirement_field %}
             <strong>{{ activity.requirement_field }} &ge; {{ activity.min_value_base|int }}</strong>
+            {% else %}
+            <strong>Any card</strong>
+            {% endif %}
           </div>
           <div class="activity-detail">
             <span>Base Reward</span>
