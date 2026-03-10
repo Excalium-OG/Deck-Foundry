@@ -22,6 +22,9 @@ RARITY_POWER = {
     'Common': 100, 'Uncommon': 150, 'Exceptional': 225,
     'Rare': 325, 'Epic': 475, 'Legendary': 700, 'Mythic': 1000,
 }
+VP_BASE = 10      # VP awarded when both cards are the same rarity
+VP_MIN  = 1       # floor — even a stomp earns something
+VP_MAX  = 100     # ceiling — biggest possible upset
 RARITY_SORT = ['Common', 'Uncommon', 'Exceptional', 'Rare', 'Epic', 'Legendary', 'Mythic']
 
 PHASE_TIMEOUT = 300  # seconds per phase (5 minutes)
@@ -907,16 +910,23 @@ class PvPCommands(commands.Cog):
                     winner_id, loser_card['instance_id'],
                 )
 
-            # Award VP to winner
+            # Award VP scaled by upset difficulty
+            winner_rp = ch_rp if challenger_wins else op_rp
+            loser_rp  = op_rp if challenger_wins else ch_rp
+            if winner_rp > 0:
+                vp_earned = max(VP_MIN, min(VP_MAX, round(VP_BASE * loser_rp / winner_rp)))
+            else:
+                vp_earned = VP_BASE
+
             if duel.deck_config.get('vp_enabled', True):
                 await conn.execute(
                     """
                     INSERT INTO player_deck_state (user_id, deck_id, pvp_vp)
-                    VALUES ($1, $2, 10)
+                    VALUES ($1, $2, $3)
                     ON CONFLICT (user_id, deck_id)
-                    DO UPDATE SET pvp_vp = player_deck_state.pvp_vp + 10
+                    DO UPDATE SET pvp_vp = player_deck_state.pvp_vp + $3
                     """,
-                    winner_id, duel.deck_id,
+                    winner_id, duel.deck_id, vp_earned,
                 )
 
         # Build results embed
@@ -957,7 +967,19 @@ class PvPCommands(commands.Cog):
             embed.add_field(name='Stakes Transferred', value=stakes_txt, inline=False)
 
         if duel.deck_config.get('vp_enabled', True):
-            embed.add_field(name='VP Earned', value=f'<@{winner_id}> +10 VP', inline=False)
+            winner_rarity = next((r for r, p in RARITY_POWER.items() if p == winner_rp), '?')
+            loser_rarity  = next((r for r, p in RARITY_POWER.items() if p == loser_rp),  '?')
+            if winner_rp < loser_rp:
+                vp_context = f'Upset bonus! ({loser_rarity} defeated by {winner_rarity})'
+            elif winner_rp > loser_rp:
+                vp_context = f'Expected win ({winner_rarity} over {loser_rarity})'
+            else:
+                vp_context = f'Even match ({winner_rarity} vs {loser_rarity})'
+            embed.add_field(
+                name='VP Earned',
+                value=f'<@{winner_id}> **+{vp_earned} VP**\n*{vp_context}*',
+                inline=False,
+            )
 
         # Update the public message
         try:
