@@ -375,18 +375,18 @@ class PackCommands(commands.Cog):
             ),
             (
                 "🎁 Booster Pack",
-                "2 cards with 2× chance for Epic, Legendary & Mythic.",
+                "3 cards with 2× chance for Epic, Legendary & Mythic.",
                 PACK_PRICES['Booster Pack']
             ),
             (
                 "✨ Booster Pack+",
-                "2 cards with 3× chance for Epic, Legendary & Mythic.",
+                "3 cards with 3× chance for Epic, Legendary & Mythic.",
                 PACK_PRICES['Booster Pack+']
             ),
             (
                 "💎 Elite Pack",
                 "5 cards — Exceptional rarity or higher guaranteed.",
-                None
+                PACK_PRICES['Elite Pack']
             ),
         ]
 

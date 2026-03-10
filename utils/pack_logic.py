@@ -22,7 +22,7 @@ def get_pack_multiplier(pack_type: str) -> float:
 def get_pack_card_count(pack_type: str) -> int:
     """Get number of cards for a pack type."""
     counts = {
-        'Normal Pack': 3,
+        'Normal Pack': 2,
         'Booster Pack': 3,
         'Booster Pack+': 3,
         'Elite Pack': 5
