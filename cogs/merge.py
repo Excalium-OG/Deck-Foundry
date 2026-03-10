@@ -1,5 +1,5 @@
 """
-DeckForge Card Merge System Cog
+Deck Foundry Card Merge System Cog
 Handles card merging with perk progression and diminishing returns
 """
 import discord

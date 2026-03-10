@@ -1,5 +1,5 @@
 """
-Utility functions for DeckForge card management
+Utility functions for Deck Foundry card management
 """
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Tuple

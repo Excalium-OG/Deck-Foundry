@@ -17,14 +17,14 @@ author = "agent"
 
 [[workflows.workflow.tasks]]
 task = "workflow.run"
-args = "DeckForge Bot"
+args = "Deck Foundry Bot"
 
 [[workflows.workflow.tasks]]
 task = "workflow.run"
 args = "Web Admin Portal"
 
 [[workflows.workflow]]
-name = "DeckForge Bot"
+name = "Deck Foundry Bot"
 author = "agent"
 
 [[workflows.workflow.tasks]]

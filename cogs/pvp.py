@@ -1,5 +1,5 @@
 """
-PvP Duel System for DeckForge.
+PvP Duel System for Deck Foundry.
 
 /duel @opponent  →  public embed + ephemeral card select to challenger
 Opponent accepts  →  ephemeral card select to opponent

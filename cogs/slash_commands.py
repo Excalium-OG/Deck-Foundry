@@ -1,5 +1,5 @@
 """
-DeckForge Slash Commands
+Deck Foundry Slash Commands
 Slash command implementations for Discord
 """
 import discord
@@ -280,11 +280,11 @@ class SlashCommands(commands.Cog):
         
         await interaction.response.send_message(embed=embed, ephemeral=True)
     
-    @app_commands.command(name="help", description="Get help with DeckForge commands")
+    @app_commands.command(name="help", description="Get help with Deck Foundry commands")
     async def help_command(self, interaction: discord.Interaction):
         """Display help information about available commands"""
         embed = discord.Embed(
-            title="🚀 DeckForge Help",
+            title="🚀 Deck Foundry Help",
             description="Collect rocket-themed trading cards and build your collection!",
             color=discord.Color.blue()
         )

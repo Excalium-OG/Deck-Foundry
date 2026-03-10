@@ -1,5 +1,5 @@
 """
-DeckForge - Discord Trading Card Bot
+Deck Foundry - Discord Trading Card Bot
 Main bot file with database connection pooling and cog loading
 """
 import discord
@@ -14,7 +14,7 @@ import asyncio
 load_dotenv()
 
 # Bot configuration
-DISCORD_TOKEN = os.getenv('DECKFORGE_BOT_TOKEN')
+DISCORD_TOKEN = os.getenv('DECKFOUNDRY_BOT_TOKEN')
 DATABASE_URL = os.getenv('DATABASE_URL')
 COMMAND_PREFIX = '!'
 
@@ -25,7 +25,7 @@ if admin_ids_env:
     ADMIN_IDS = [int(id.strip()) for id in admin_ids_env.split(',') if id.strip()]
 
 
-class DeckForgeBot(commands.Bot):
+class DeckFoundryBot(commands.Bot):
     """Custom bot class with database pool and slash command support"""
     
     def __init__(self):
@@ -121,7 +121,7 @@ class DeckForgeBot(commands.Bot):
         except Exception as e:
             print(f"⚠️ Failed to sync slash commands: {e}")
         
-        print(f"🚀 DeckForge bot is ready!")
+        print(f"🚀 Deck Foundry bot is ready!")
         print(f"   Logged in as: {self.user.name} ({self.user.id})")
         print(f"   Command prefix: {COMMAND_PREFIX} (legacy)")
         print(f"   Slash commands: Enabled")
@@ -191,12 +191,12 @@ async def main():
     """Main entry point"""
     # Check for Discord token
     if not DISCORD_TOKEN:
-        print("❌ ERROR: DECKFORGE_BOT_TOKEN not found in environment variables!")
+        print("❌ ERROR: DECKFOUNDRY_BOT_TOKEN not found in environment variables!")
         print("Please set up your Discord bot token:")
         print("1. Go to https://discord.com/developers/applications")
         print("2. Create a new application or select existing one")
         print("3. Go to 'Bot' section and copy the token")
-        print("4. Add DECKFORGE_BOT_TOKEN to your environment variables or .env file")
+        print("4. Add DECKFOUNDRY_BOT_TOKEN to your environment variables or .env file")
         return
     
     if not DATABASE_URL:
@@ -204,7 +204,7 @@ async def main():
         return
     
     # Create and run bot
-    bot = DeckForgeBot()
+    bot = DeckFoundryBot()
     
     try:
         await bot.start(DISCORD_TOKEN)

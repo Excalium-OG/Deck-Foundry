@@ -15,7 +15,7 @@ from web.object_storage import ObjectStorageService
 from fastapi.staticfiles import StaticFiles as BaseStaticFiles
 
 # Initialize FastAPI app
-app = FastAPI(title="DeckForge Admin Portal")
+app = FastAPI(title="Deck Foundry Web Portal")
 
 # Add session middleware for OAuth with proper cookie settings for iframe
 app.add_middleware(
@@ -524,7 +524,7 @@ async def assign_deck_to_server(
 @app.get("/api/server/{guild_id}/channels")
 async def get_server_channels(guild_id: int, user = Depends(require_admin)):
     """Get text channels the bot has access to in a guild"""
-    bot_token = os.getenv('DECKFORGE_BOT_TOKEN')
+    bot_token = os.getenv('DECKFOUNDRY_BOT_TOKEN')
     if not bot_token:
         return {"channels": [], "error": "Bot token not configured"}
     
@@ -2154,7 +2154,7 @@ async def admin_audit_log(request: Request, user = Depends(require_global_admin)
 @app.get("/health")
 async def health():
     """Health check endpoint"""
-    return {"status": "ok", "service": "DeckForge Admin Portal"}
+    return {"status": "ok", "service": "Deck Foundry Web Portal"}
 
 import uvicorn
 

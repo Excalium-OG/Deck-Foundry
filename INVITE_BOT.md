@@ -1,9 +1,9 @@
-# How to Invite DeckForge to Your Discord Server
+# How to Invite Deck Foundry to Your Discord Server
 
 ## Quick Invite Link Generator
 
 1. Go to https://discord.com/developers/applications
-2. Select your **DeckForge** application
+2. Select your **Deck Foundry** application
 3. Click **"OAuth2"** → **"URL Generator"** in the left sidebar
 
 ## Required Scopes
@@ -23,7 +23,7 @@ Under **"BOT PERMISSIONS"**, select:
 ## Invite the Bot
 1. Copy the **Generated URL** at the bottom
 2. Open it in your browser
-3. Select the server you want to add DeckForge to
+3. Select the server you want to add Deck Foundry to
 4. Click **"Authorize"**
 
 ## Test the Bot

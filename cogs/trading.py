@@ -1,5 +1,5 @@
 """
-DeckForge Trading System Cog
+Deck Foundry Trading System Cog
 Handles card trading between players with multi-step confirmation flow
 """
 import discord

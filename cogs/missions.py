@@ -1099,7 +1099,7 @@ class MissionCommands(commands.Cog):
     async def refill_board(self, ctx):
         """[ADMIN] Manually refill the mission board"""
         if not self.is_admin(ctx.author.id):
-            await ctx.send("This command is only available to DeckForge admins.")
+            await ctx.send("This command is only available to Deck Foundry admins.")
             return
         
         guild_id = ctx.guild.id if ctx.guild else None
@@ -1123,7 +1123,7 @@ class MissionCommands(commands.Cog):
         Usage: !mcomplete <mission_id>
         """
         if not self.is_admin(ctx.author.id):
-            await ctx.send("This command is only available to DeckForge admins.")
+            await ctx.send("This command is only available to Deck Foundry admins.")
             return
         
         now = datetime.now(timezone.utc)

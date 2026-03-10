@@ -1,5 +1,5 @@
 """
-DeckForge Pack Commands Cog
+Deck Foundry Pack Commands Cog
 Handles pack inventory, claiming, and trading commands
 """
 import discord

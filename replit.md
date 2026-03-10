@@ -1,7 +1,7 @@
-# DeckForge - Theme-Agnostic Trading Card Platform
+# Deck Foundry - Theme-Agnostic Trading Card Platform
 
 ## Overview
-DeckForge is a platform that enables anyone to create, manage, and play custom trading card games on Discord. Unlike traditional card games with fixed themes, DeckForge empowers creators to design their own card decks with any theme imaginable—from fantasy creatures to sports stars, anime characters to historical figures. Each deck operates as its own self-contained economy with independent credits, cooldowns, and leaderboards.
+Deck Foundry is a platform that enables anyone to create, manage, and play custom trading card games on Discord. Unlike traditional card games with fixed themes, Deck Foundry empowers creators to design their own card decks with any theme imaginable—from fantasy creatures to sports stars, anime characters to historical figures. Each deck operates as its own self-contained economy with independent credits, cooldowns, and leaderboards.
 
 The platform consists of two main components:
 1. **Web Portal**: A public interface where anyone can create and design card decks, define custom card fields, set drop rates, and configure gameplay mechanics.
@@ -14,7 +14,7 @@ Preferred communication style: Simple, everyday language.
 - **Open Creation**: The web portal is accessible to anyone who wants to create a deck—no Discord server admin privileges required.
 - **Per-Deck Economies**: Each deck has its own isolated economy (credits, MP, cooldowns), allowing creators to balance their games independently.
 - **Reference-Based Adoption**: When servers adopt public decks, they link to the original rather than cloning, ensuring content updates propagate to all adopters.
-- **Global Administration**: DeckForge global admin privileges are separate from deck creation and are reserved for platform-wide moderation.
+- **Global Administration**: Deck Foundry global admin privileges are separate from deck creation and are reserved for platform-wide moderation.
 
 ## System Architecture
 
@@ -25,7 +25,7 @@ Preferred communication style: Simple, everyday language.
 ### Authentication & Authorization
 - **Discord Bot**: Role-based access control via `ADMIN_IDS` for bot-level commands.
 - **Web Portal**: Discord OAuth2 authentication with two-tier authorization:
-  - **Global Admins**: Full platform access for DeckForge administrators.
+  - **Global Admins**: Full platform access for Deck Foundry administrators.
   - **Deck Creators**: Any authenticated user can create and manage their own decks.
   - **Server Managers**: Users with Discord Manage Server permissions can assign decks to their servers.
 
@@ -192,14 +192,27 @@ Deck-specific mission boards with competitive elements:
 - **Web**: `FastAPI`, `Uvicorn`, `Authlib`, `Jinja2`, `httpx`, `itsdangerous`
 
 ### Environment Variables
-- **Bot**: `DECKFORGE_BOT_TOKEN`, `DATABASE_URL`, `ADMIN_IDS`
+- **Bot**: `DECKFOUNDRY_BOT_TOKEN`, `DATABASE_URL`, `ADMIN_IDS`
 - **Web**: `DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET`, `SESSION_SECRET`, `DISCORD_REDIRECT_URI`
 
-## Recent Changes
-- Added Mission Points (MP) system with 10% credit earnings
-- Implemented `/leaderboard` command for deck-specific rankings
-- Added Elite Pack type (5 cards, Exceptional+ floor)
-- Added monthly reward distribution with automatic MP reset
-- Updated credit trading with `/tradeaddcredits` command (0-1M credits)
-- Added Terms of Use acceptance gate on first login: users must scroll through and accept terms before a session is created; acceptance stored in `terms_acceptances` table keyed by `(user_id, terms_version)`. Bump `TERMS_VERSION` constant in `web/main.py` to require re-acceptance from all users.
-- Added PvP Duel System: `/duel @opponent` and `/pvpleaderboard` commands in `cogs/pvp.py`. Score = RNG(0.5–1.5) × (RarityPower + MergePower + AttributePower). Stakes (credits/cards/both/none) and VP leaderboard configurable per deck via Activities page PvP Settings section (`/deck/{id}/pvp-settings` POST route). Migration 0021 adds `pvp_enabled`, `pvp_attribute`, `allow_no_stake`, `vp_enabled` to decks and `pvp_vp` to `player_deck_state`.
+## Version History
+
+### v0.3.0 (Current)
+- **Rebranded** from DeckForge to Deck Foundry. Bot token env var renamed to `DECKFOUNDRY_BOT_TOKEN`.
+- **PvP card locking**: Cards committed to active duels are locked in-memory (`bot.pvp_locked_cards`) and blocked from recycle, trade, merge, and mission operations until the duel resolves.
+- **PvP VP difficulty scaling**: Victory points are now awarded based on rarity upset — `VP = clamp(round(10 × loser_rarity_power / winner_rarity_power), 1, 100)`. Upsetting a Mythic with a Common card awards 100 VP; winning with a Mythic over a Common awards 1 VP. Same-rarity duels always award 10 VP.
+- **Optional mission card attribute**: Deck editors can uncheck "Require card attribute" on a mission activity. When disabled, any card qualifies for that mission regardless of stats. Migration 0022 adds `require_card_attribute` boolean (default `TRUE`) and makes `requirement_field` nullable.
+- **Daily mission reroll**: Mission boards are fully cleared and regenerated at 12:00 AM UTC for every deck with active mission templates. Admin debug command `!rerollmissions` triggers the same immediately.
+- **Mission stake dropdown fix**: Fixed a bug where recycled (no longer owned) cards incorrectly appeared in the PvP stake card selector due to a missing `recycled_at IS NULL` filter.
+- **Deck editing sidebar**: Dark orange border (`#c45c00`) added to the deck editing side navigation panel.
+
+### v0.2.1
+- Added PvP Duel System: `/duel @opponent` and `/pvpleaderboard` commands in `cogs/pvp.py`. Score = RNG(0.5–1.5) × (RarityPower + MergePower + AttributePower). Stakes (credits/cards/both/none) and VP leaderboard configurable per deck via Activities page PvP Settings section. Migration 0021 adds `pvp_enabled`, `pvp_attribute`, `allow_no_stake`, `vp_enabled` to decks and `pvp_vp` to `player_deck_state`.
+
+### v0.2.0
+- Added Terms of Use acceptance gate on first login. Acceptance stored in `terms_acceptances` table keyed by `(user_id, terms_version)`. Bump `TERMS_VERSION` in `web/main.py` to require re-acceptance.
+- Added Mission Points (MP) system with 10% credit earnings from completed missions.
+- Implemented `/leaderboard` command for deck-specific MP rankings.
+- Added Elite Pack type (5 cards, Exceptional+ floor, reward-only).
+- Added monthly reward distribution (1st: 3 Elite Packs, 2nd: 1 Elite Pack, 3rd: 2 Booster+) with automatic MP reset on the 1st of each month.
+- Updated credit trading with `/tradeaddcredits` command (0–1,000,000 credits).

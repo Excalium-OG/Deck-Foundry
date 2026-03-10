@@ -1,5 +1,5 @@
 """
-DeckForge Card Commands Cog
+Deck Foundry Card Commands Cog
 Handles all card-related commands for the trading card bot
 """
 import discord
