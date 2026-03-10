@@ -1,0 +1,256 @@
+{% extends "deck_base.html" %}
+
+{% block title %}Card Template - {{ deck.name }}{% endblock %}
+{% block page_title %}Card Template{% endblock %}
+
+{% block deck_content %}
+<style>
+  .ct-field-item {
+    border: 2px solid #e5e7eb;
+    border-radius: 8px;
+    margin-bottom: 0.75rem;
+    overflow: hidden;
+    background: white;
+  }
+  .ct-field-summary {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.9rem 1.1rem;
+    background: #f9fafb;
+    cursor: default;
+  }
+  .ct-field-info {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    flex-wrap: wrap;
+  }
+  .ct-field-name {
+    font-weight: 700;
+    color: #1f2937;
+    font-size: 0.95rem;
+  }
+  .ct-type-badge {
+    display: inline-block;
+    padding: 0.15rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .ct-type-text     { background: #e0f2fe; color: #0369a1; }
+  .ct-type-number   { background: #dcfce7; color: #15803d; }
+  .ct-type-dropdown { background: #fef3c7; color: #b45309; }
+  .ct-required-badge {
+    background: #fee2e2; color: #dc2626;
+    font-size: 0.7rem; font-weight: 700;
+    padding: 0.15rem 0.45rem; border-radius: 4px;
+  }
+  .ct-options-preview {
+    font-size: 0.78rem; color: #9ca3af;
+    font-style: italic;
+    max-width: 280px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .ct-field-actions { display: flex; gap: 0.5rem; flex-shrink: 0; }
+  .ct-edit-form {
+    display: none;
+    padding: 1.25rem 1.25rem 1rem;
+    border-top: 2px solid #667eea;
+    background: #f8f9ff;
+  }
+  .ct-add-form {
+    display: none;
+    background: #f0f9ff;
+    border: 2px solid #667eea;
+    border-radius: 8px;
+    padding: 1.25rem;
+    margin-bottom: 1.25rem;
+  }
+  .ct-warn-box {
+    background: #fef3c7;
+    border-left: 4px solid #f59e0b;
+    padding: 0.9rem 1rem;
+    border-radius: 4px;
+    margin-bottom: 1.5rem;
+    font-size: 0.9rem;
+  }
+  .ct-warn-box ul { margin: 0.4rem 0 0 1.25rem; padding: 0; }
+  .ct-warn-box li { margin-bottom: 0.2rem; }
+  .ct-status-ok  { background:#d1fae5; color:#065f46; border:1px solid #10b981; padding:0.65rem 1rem; border-radius:7px; margin-bottom:1rem; font-size:0.9rem; }
+  .ct-status-err { background:#fee2e2; color:#991b1b; border:1px solid #ef4444; padding:0.65rem 1rem; border-radius:7px; margin-bottom:1rem; font-size:0.9rem; }
+  .ct-section-header {
+    display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;
+  }
+  .ct-section-header h3 { margin: 0; color: #374151; font-size: 1.05rem; }
+  .ct-order-hint { font-size: 0.78rem; color: #9ca3af; margin-top: 0.25rem; }
+</style>
+
+<div class="deck-content-card">
+  {% if request.query_params.get('status') == 'added' %}
+  <div class="ct-status-ok">Attribute added. Existing cards now have a default value for this field.</div>
+  {% elif request.query_params.get('status') == 'updated' %}
+  <div class="ct-status-ok">Attribute updated. Cards using removed dropdown options have been set to blank.</div>
+  {% elif request.query_params.get('status') == 'deleted' %}
+  <div class="ct-status-ok">Attribute deleted and removed from all cards.</div>
+  {% elif request.query_params.get('status') == 'error' %}
+  <div class="ct-status-err">{{ request.query_params.get('msg', 'An error occurred.') }}</div>
+  {% elif request.query_params.get('status') == 'duplicate' %}
+  <div class="ct-status-err">An attribute with that name already exists in this deck.</div>
+  {% endif %}
+
+  <div class="ct-warn-box">
+    <strong>How template changes affect existing cards:</strong>
+    <ul>
+      <li><strong>Add attribute:</strong> All existing cards receive a default value — <em>0</em> for numbers, <em>empty</em> for text, <em>blank</em> for dropdowns.</li>
+      <li><strong>Remove attribute:</strong> The attribute and all its values are permanently deleted from every card.</li>
+      <li><strong>Rename attribute:</strong> The name updates everywhere — existing card values are preserved.</li>
+      <li><strong>Remove dropdown option:</strong> Cards using that option will have the value cleared to blank.</li>
+      <li>After changes, go to <strong>Overview &amp; Cards</strong> to update card values as needed.</li>
+    </ul>
+  </div>
+
+  <div class="ct-section-header">
+    <div>
+      <h3>Attributes ({{ fields|length }})</h3>
+      <p class="ct-order-hint">Fields are displayed in the order they were created.</p>
+    </div>
+    <button onclick="toggleAddForm()" class="df-btn df-btn-primary df-btn-sm" id="addBtn">+ Add Attribute</button>
+  </div>
+
+  <!-- Add form -->
+  <div class="ct-add-form" id="ct-add-form">
+    <h4 style="margin:0 0 1rem;color:#1f2937;">New Attribute</h4>
+    <form method="POST" action="/deck/{{ deck.deck_id }}/template/field/add">
+      <div class="df-form-row">
+        <div class="df-form-group">
+          <label>Name *</label>
+          <input type="text" name="field_name" required placeholder="e.g., Attack">
+        </div>
+        <div class="df-form-group">
+          <label>Type *</label>
+          <select name="field_type" id="add-type-select" required>
+            <option value="text">Text</option>
+            <option value="number">Number</option>
+            <option value="dropdown">Dropdown</option>
+          </select>
+        </div>
+        <div class="df-form-group" id="add-dropdown-opts" style="display:none;">
+          <label>Options (comma-separated) *</label>
+          <input type="text" name="dropdown_options" placeholder="Option1,Option2,Option3">
+          <small>e.g., Red,Green,Blue</small>
+        </div>
+        <div class="df-form-group" style="display:flex;align-items:flex-end;padding-bottom:1.5rem;">
+          <label style="display:flex;align-items:center;gap:0.5rem;cursor:pointer;">
+            <input type="checkbox" name="is_required" value="1">
+            Required field
+          </label>
+        </div>
+      </div>
+      <div style="display:flex;gap:0.75rem;">
+        <button type="submit" class="df-btn df-btn-primary df-btn-sm">Add Attribute</button>
+        <button type="button" onclick="toggleAddForm()" class="df-btn df-btn-secondary df-btn-sm">Cancel</button>
+      </div>
+    </form>
+  </div>
+
+  <!-- Existing fields -->
+  {% if fields %}
+  <div id="fields-list">
+    {% for field in fields %}
+    <div class="ct-field-item" id="ct-field-{{ field.template_id }}">
+      <div class="ct-field-summary">
+        <div class="ct-field-info">
+          <span class="ct-field-name">{{ field.field_name }}</span>
+          <span class="ct-type-badge ct-type-{{ field.field_type }}">{{ field.field_type }}</span>
+          {% if field.is_required %}
+          <span class="ct-required-badge">Required</span>
+          {% endif %}
+          {% if field.field_type == 'dropdown' and field.dropdown_options %}
+          <span class="ct-options-preview">{{ field.dropdown_options }}</span>
+          {% endif %}
+        </div>
+        <div class="ct-field-actions">
+          <button onclick="toggleEditForm({{ field.template_id }})" class="df-btn df-btn-sm df-btn-secondary">Edit</button>
+          <form method="POST" action="/deck/{{ deck.deck_id }}/template/field/{{ field.template_id }}/delete"
+                onsubmit="return confirm('Delete attribute \'{{ field.field_name }}\'?\n\nThis will permanently remove this attribute and all its values from {{ card_count }} card(s). This cannot be undone.');"
+                style="display:inline;">
+            <button type="submit" class="df-btn df-btn-sm df-btn-danger">Delete</button>
+          </form>
+        </div>
+      </div>
+
+      <div class="ct-edit-form" id="ct-edit-{{ field.template_id }}">
+        <form method="POST" action="/deck/{{ deck.deck_id }}/template/field/{{ field.template_id }}/update">
+          <div class="df-form-row">
+            <div class="df-form-group">
+              <label>Name *</label>
+              <input type="text" name="field_name" value="{{ field.field_name }}" required>
+            </div>
+            <div class="df-form-group">
+              <label>Type *</label>
+              <select name="field_type" class="edit-type-select" data-id="{{ field.template_id }}" required>
+                <option value="text"     {% if field.field_type == 'text' %}selected{% endif %}>Text</option>
+                <option value="number"   {% if field.field_type == 'number' %}selected{% endif %}>Number</option>
+                <option value="dropdown" {% if field.field_type == 'dropdown' %}selected{% endif %}>Dropdown</option>
+              </select>
+            </div>
+            <div class="df-form-group edit-dropdown-opts" id="edit-ddo-{{ field.template_id }}"
+                 {% if field.field_type != 'dropdown' %}style="display:none;"{% endif %}>
+              <label>Options (comma-separated)</label>
+              <input type="text" name="dropdown_options" value="{{ field.dropdown_options or '' }}" placeholder="Option1,Option2,Option3">
+              <small>Removing options will clear those values from all cards.</small>
+            </div>
+            <div class="df-form-group" style="display:flex;align-items:flex-end;padding-bottom:1.5rem;">
+              <label style="display:flex;align-items:center;gap:0.5rem;cursor:pointer;">
+                <input type="checkbox" name="is_required" value="1" {% if field.is_required %}checked{% endif %}>
+                Required field
+              </label>
+            </div>
+          </div>
+          <div style="display:flex;gap:0.75rem;">
+            <button type="submit" class="df-btn df-btn-primary df-btn-sm">Save Changes</button>
+            <button type="button" onclick="toggleEditForm({{ field.template_id }})" class="df-btn df-btn-secondary df-btn-sm">Cancel</button>
+          </div>
+        </form>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="df-empty-state">No attributes yet. Add an attribute to start customizing your cards.</p>
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function toggleAddForm() {
+  const form = document.getElementById('ct-add-form');
+  const btn = document.getElementById('addBtn');
+  const showing = form.style.display !== 'none' && form.style.display !== '';
+  form.style.display = showing ? 'none' : 'block';
+  btn.textContent = showing ? '+ Add Attribute' : '✕ Cancel';
+}
+
+function toggleEditForm(id) {
+  const form = document.getElementById('ct-edit-' + id);
+  form.style.display = form.style.display === 'none' || form.style.display === '' ? 'block' : 'none';
+}
+
+document.getElementById('add-type-select').addEventListener('change', function() {
+  document.getElementById('add-dropdown-opts').style.display = this.value === 'dropdown' ? 'block' : 'none';
+});
+
+document.querySelectorAll('.edit-type-select').forEach(function(sel) {
+  sel.addEventListener('change', function() {
+    var opts = document.getElementById('edit-ddo-' + this.dataset.id);
+    opts.style.display = this.value === 'dropdown' ? 'block' : 'none';
+  });
+});
+</script>
+{% endblock %}

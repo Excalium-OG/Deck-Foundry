@@ -1,6 +1,6 @@
-# 🚀 DeckForge — Customizable Discord Card Platform
+# 🚀 Deck Foundry — Customizable Discord Card Platform
 
-**DeckForge** is a fully customizable Discord-based card platform where users can create, collect, and trade themed decks of their own design — rockets, fantasy, memes, or anything else. Originally built around rocket collectibles, DeckForge has evolved into a flexible system supporting user-defined card templates, rarity tiers, and deck mechanics. Whether you're building a sci-fi arsenal or a meme deck for your server, DeckForge gives you the tools to craft, manage, and share your creations.
+**Deck Foundry** is a fully customizable Discord-based card platform where users can create, collect, and trade themed decks of their own design — rockets, fantasy, memes, or anything else. Originally built around rocket collectibles, Deck Foundry has evolved into a flexible system supporting user-defined card templates, rarity tiers, and deck mechanics. Whether you're building a sci-fi arsenal or a meme deck for your server, Deck Foundry gives you the tools to craft, manage, and share your creations.
 
 ---
 
@@ -45,7 +45,7 @@
 ### 🔧 Environment Variables
 
 #### Discord Bot
-DECKFORGE_BOT_TOKEN= DATABASE_URL= ADMIN_IDS=  # comma-separated Discord user IDs
+DECKFOUNDRY_BOT_TOKEN= DATABASE_URL= ADMIN_IDS=  # comma-separated Discord user IDs
 
 #### Web Admin Portal
 DISCORD_CLIENT_ID= DISCORD_CLIENT_SECRET= SESSION_SECRET= DISCORD_REDIRECT_URI= PRIVATE_OBJECT_DIR=  # e.g., /bucket-name/path

@@ -1,0 +1,9 @@
+-- Migration 0021: PvP Duel System
+-- Adds per-deck PvP configuration and Victory Points tracking
+
+ALTER TABLE decks ADD COLUMN IF NOT EXISTS pvp_enabled BOOLEAN DEFAULT FALSE;
+ALTER TABLE decks ADD COLUMN IF NOT EXISTS pvp_attribute VARCHAR(100);
+ALTER TABLE decks ADD COLUMN IF NOT EXISTS allow_no_stake BOOLEAN DEFAULT FALSE;
+ALTER TABLE decks ADD COLUMN IF NOT EXISTS vp_enabled BOOLEAN DEFAULT TRUE;
+
+ALTER TABLE player_deck_state ADD COLUMN IF NOT EXISTS pvp_vp BIGINT DEFAULT 0;

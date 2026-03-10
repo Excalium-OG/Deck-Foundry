@@ -1,5 +1,5 @@
 """
-DeckForge Pack Commands Cog
+Deck Foundry Pack Commands Cog
 Handles pack inventory, claiming, and trading commands
 """
 import discord
@@ -355,6 +355,58 @@ class PackCommands(commands.Cog):
             
             await ctx.send(embed=embed)
     
+    @commands.hybrid_command(name='shop', description="View all available items and their prices")
+    async def shop(self, ctx):
+        """
+        Display the shop listing all purchasable items.
+        Currently shows card packs. More items may be added in the future.
+        """
+        embed = discord.Embed(
+            title="🛒 Shop",
+            description="Browse available items and their prices.",
+            color=0x667eea
+        )
+
+        pack_lines = [
+            (
+                "📦 Normal Pack",
+                "2 cards at base drop rates.",
+                PACK_PRICES['Normal Pack']
+            ),
+            (
+                "🎁 Booster Pack",
+                "2 cards with 2× chance for Epic, Legendary & Mythic.",
+                PACK_PRICES['Booster Pack']
+            ),
+            (
+                "✨ Booster Pack+",
+                "2 cards with 3× chance for Epic, Legendary & Mythic.",
+                PACK_PRICES['Booster Pack+']
+            ),
+            (
+                "💎 Elite Pack",
+                "5 cards — Exceptional rarity or higher guaranteed.",
+                None
+            ),
+        ]
+
+        pack_value_lines = []
+        for name, desc, price in pack_lines:
+            if price is not None:
+                pack_value_lines.append(f"**{name}** — {price:,} credits\n{desc}")
+            else:
+                pack_value_lines.append(f"**{name}** — *Reward only (cannot be purchased)*\n{desc}")
+
+        embed.add_field(
+            name="Card Packs",
+            value="\n\n".join(pack_value_lines),
+            inline=False
+        )
+
+        embed.set_footer(text="To purchase card packs, use /buypack amount:x pack_type:x")
+
+        await ctx.send(embed=embed)
+
     @commands.hybrid_command(name='buypack', description="Purchase packs with credits")
     async def buy_pack(self, ctx, amount: int = 1, pack_type: str = "Normal Pack"):
         """

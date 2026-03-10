@@ -1,5 +1,5 @@
 """
-DeckForge Trading System Cog
+Deck Foundry Trading System Cog
 Handles card trading between players with multi-step confirmation flow
 """
 import discord
@@ -94,6 +94,7 @@ class TradingCommands(commands.Cog):
         
         deck_id = deck['deck_id']
         
+        locked_list = list(getattr(self.bot, 'pvp_locked_cards', set()))
         async with self.db_pool.acquire() as conn:
             owned_cards = await conn.fetch(
                 """
@@ -112,10 +113,11 @@ class TradingCommands(commands.Cog):
                       WHERE status = 'active' AND started_at IS NOT NULL 
                       AND card_instance_id IS NOT NULL
                   )
+                  AND NOT (uc.instance_id::text = ANY($3::text[]))
                 GROUP BY c.card_id, c.name, uc.merge_level
                 ORDER BY c.name, uc.merge_level
                 """,
-                user_id, deck_id
+                user_id, deck_id, locked_list
             )
             
             # Build choices with merge level indicator
@@ -197,7 +199,8 @@ class TradingCommands(commands.Cog):
             return choices[:25]
     
     async def check_user_card_count(self, conn, user_id: int, card_id: int, merge_level: int = None) -> int:
-        """Count how many non-recycled instances of a card a user owns at a specific merge level (excludes cards in active missions)"""
+        """Count non-recycled, non-mission-locked, non-pvp-locked instances of a card for a user."""
+        locked_list = list(getattr(self.bot, 'pvp_locked_cards', set()))
         if merge_level is not None:
             count = await conn.fetchval(
                 """SELECT COUNT(*) FROM user_cards
@@ -206,8 +209,9 @@ class TradingCommands(commands.Cog):
                        SELECT card_instance_id FROM active_missions 
                        WHERE status = 'active' AND started_at IS NOT NULL 
                        AND card_instance_id IS NOT NULL
-                   )""",
-                user_id, card_id, merge_level
+                   )
+                   AND NOT (instance_id::text = ANY($4::text[]))""",
+                user_id, card_id, merge_level, locked_list
             )
         else:
             count = await conn.fetchval(
@@ -217,8 +221,9 @@ class TradingCommands(commands.Cog):
                        SELECT card_instance_id FROM active_missions 
                        WHERE status = 'active' AND started_at IS NOT NULL 
                        AND card_instance_id IS NOT NULL
-                   )""",
-                user_id, card_id
+                   )
+                   AND NOT (instance_id::text = ANY($3::text[]))""",
+                user_id, card_id, locked_list
             )
         return count or 0
     

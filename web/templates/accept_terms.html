@@ -1,0 +1,220 @@
+{% extends "base.html" %}
+{% block title %}Accept Terms of Use - Deck Foundry{% endblock %}
+
+{% block content %}
+<style>
+  .terms-wrapper {
+    max-width: 820px;
+    margin: 0 auto;
+  }
+  .terms-header {
+    background: white;
+    border-radius: 12px 12px 0 0;
+    padding: 2rem 2.5rem 1.5rem;
+    border-bottom: 2px solid #e5e7eb;
+  }
+  .terms-header h1 {
+    font-size: 1.7rem;
+    color: #1f2937;
+    margin: 0 0 0.4rem;
+  }
+  .terms-header p {
+    color: #6b7280;
+    font-size: 0.95rem;
+    margin: 0;
+  }
+  .terms-body {
+    background: white;
+    padding: 0 2.5rem;
+    max-height: 420px;
+    overflow-y: auto;
+    border-left: 4px solid #e5e7eb;
+  }
+  .terms-body h2 {
+    font-size: 1rem;
+    font-weight: 700;
+    color: #1f2937;
+    margin: 1.5rem 0 0.4rem;
+  }
+  .terms-body p, .terms-body li {
+    color: #374151;
+    line-height: 1.7;
+    font-size: 0.93rem;
+  }
+  .terms-body ul {
+    margin: 0.4rem 0 0.4rem 1.5rem;
+  }
+  .terms-body ul li {
+    margin-bottom: 0.2rem;
+  }
+  .terms-footer {
+    background: white;
+    border-radius: 0 0 12px 12px;
+    padding: 1.5rem 2.5rem 2rem;
+    border-top: 2px solid #e5e7eb;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+  }
+  .accept-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+    margin-bottom: 1.25rem;
+  }
+  .accept-row input[type="checkbox"] {
+    margin-top: 3px;
+    width: 18px;
+    height: 18px;
+    accent-color: #667eea;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+  .accept-row label {
+    color: #374151;
+    font-size: 0.95rem;
+    cursor: pointer;
+    line-height: 1.5;
+  }
+  .accept-row label a {
+    color: #667eea;
+    text-decoration: underline;
+  }
+  .btn-accept {
+    background: #667eea;
+    color: white;
+    border: none;
+    padding: 0.75rem 2rem;
+    border-radius: 8px;
+    font-size: 1rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background 0.2s, opacity 0.2s;
+    width: 100%;
+  }
+  .btn-accept:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+  .btn-accept:not(:disabled):hover {
+    background: #5568d3;
+  }
+  .scroll-hint {
+    text-align: center;
+    color: #9ca3af;
+    font-size: 0.82rem;
+    padding: 0.6rem 0;
+    font-style: italic;
+  }
+  .version-badge {
+    display: inline-block;
+    background: #f3f4f6;
+    color: #6b7280;
+    font-size: 0.78rem;
+    padding: 0.2rem 0.6rem;
+    border-radius: 999px;
+    margin-left: 0.5rem;
+    font-weight: 600;
+  }
+</style>
+
+<div class="terms-wrapper">
+  <div class="terms-header">
+    <h1>Terms of Use <span class="version-badge">v{{ terms_version }}</span></h1>
+    <p>Please read and accept the Terms of Use to continue to Deck Foundry.</p>
+  </div>
+
+  <div class="terms-body" id="termsBody">
+    <h2>1. Acceptance of Terms</h2>
+    <p>By accessing or using Deck Foundry, you agree to be bound by these Terms of Use, our Privacy Policy, and any additional guidelines posted within the platform. If you do not agree, you may not use Deck Foundry.</p>
+
+    <h2>2. Description of the Service</h2>
+    <p>Deck Foundry is a platform that allows users to create, manage, and share digital card decks. Users may keep decks private or submit them to the public marketplace, where they become discoverable by others. Deck Foundry may also integrate with Discord or other third-party services to enhance gameplay and community features.</p>
+
+    <h2>3. User Accounts</h2>
+    <p>You are responsible for maintaining the confidentiality of your account credentials and for all activity that occurs under your account. Deck Foundry reserves the right to suspend or terminate accounts that violate these Terms.</p>
+
+    <h2>4. User-Generated Content</h2>
+    <p>You retain ownership of the content you create. By uploading or submitting content to Deck Foundry, you grant Deck Foundry a worldwide, non-exclusive, royalty-free license to host, display, and distribute your content within the platform.</p>
+    <p>Content submitted to the public marketplace must comply with all content rules, including restrictions on illegal, hateful, or explicit material. Deck Foundry may review, filter, or remove content that violates these rules or applicable law.</p>
+
+    <h2>5. Marketplace Content Rules</h2>
+    <p>When submitting a deck to the public marketplace, you agree that:</p>
+    <ul>
+      <li>Content must not contain illegal, hateful, harassing, or violent material.</li>
+      <li>Explicit or adult content is not permitted in the public marketplace.</li>
+      <li>Decks containing adult themes may be created privately but cannot be listed publicly.</li>
+      <li>Deck Foundry may apply automated or manual review to ensure compliance.</li>
+      <li>Deck Foundry may remove or restrict content at its discretion.</li>
+    </ul>
+
+    <h2>6. Prohibited Conduct</h2>
+    <p>Users may not:</p>
+    <ul>
+      <li>Use Deck Foundry for unlawful purposes.</li>
+      <li>Attempt to exploit, reverse-engineer, or disrupt the platform.</li>
+      <li>Upload malware, spam, or harmful code.</li>
+      <li>Impersonate others or misrepresent affiliation.</li>
+      <li>Harass, threaten, or abuse other users.</li>
+    </ul>
+
+    <h2>7. Intellectual Property</h2>
+    <p>All Deck Foundry branding, interface elements, and platform features are the property of Deck Foundry. You may not copy, modify, or redistribute platform assets without permission.</p>
+
+    <h2>8. Third-Party Integrations</h2>
+    <p>Deck Foundry may integrate with Discord or other services. Your use of those services is governed by their respective terms. Deck Foundry is not responsible for third-party service outages, changes, or data handling.</p>
+
+    <h2>9. Termination</h2>
+    <p>Deck Foundry may suspend or terminate access to the platform at any time for violations of these Terms or for operational reasons. You may delete your account at any time.</p>
+
+    <h2>10. Disclaimer of Warranties</h2>
+    <p>Deck Foundry is provided "as is" without warranties of any kind. We do not guarantee uninterrupted service, error-free operation, or the accuracy of user-generated content.</p>
+
+    <h2>11. Limitation of Liability</h2>
+    <p>To the fullest extent permitted by law, Deck Foundry is not liable for any damages arising from your use of the platform, including loss of data, loss of revenue, or exposure to user-generated content.</p>
+
+    <h2>12. Changes to Terms</h2>
+    <p>Deck Foundry may update these Terms from time to time. Continued use of the platform after changes take effect constitutes acceptance of the updated Terms.</p>
+
+    <h2>13. Contact</h2>
+    <p>For questions about these Terms, you may contact the Deck Foundry team through the official website or support channels.</p>
+    <br>
+  </div>
+
+  <p class="scroll-hint" id="scrollHint">Scroll to read all terms before accepting</p>
+
+  <div class="terms-footer">
+    <form method="post" action="/accept-terms">
+      <input type="hidden" name="token" value="{{ pending_token }}">
+      <div class="accept-row">
+        <input type="checkbox" id="acceptCheck" name="accepted" value="yes" disabled>
+        <label for="acceptCheck">
+          I have read and agree to the <a href="/terms" target="_blank">Terms of Use</a> (v{{ terms_version }}).
+        </label>
+      </div>
+      <button type="submit" class="btn-accept" id="submitBtn" disabled>Continue to Deck Foundry</button>
+    </form>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const body = document.getElementById('termsBody');
+  const check = document.getElementById('acceptCheck');
+  const btn = document.getElementById('submitBtn');
+  const hint = document.getElementById('scrollHint');
+
+  function updateState() {
+    const atBottom = body.scrollTop + body.clientHeight >= body.scrollHeight - 10;
+    check.disabled = !atBottom;
+    if (atBottom) {
+      hint.textContent = 'You have read the terms — you may now accept below.';
+      hint.style.color = '#10b981';
+    }
+    btn.disabled = !(atBottom && check.checked);
+  }
+
+  body.addEventListener('scroll', updateState);
+  check.addEventListener('change', updateState);
+  updateState();
+</script>
+{% endblock %}

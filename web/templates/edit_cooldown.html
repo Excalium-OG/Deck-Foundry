@@ -1,132 +1,44 @@
-{% extends "base.html" %}
+{% extends "deck_base.html" %}
 
 {% block title %}Edit Cooldown - {{ deck.name }}{% endblock %}
+{% block page_title %}Edit Free Pack Cooldown{% endblock %}
 
-{% block content %}
-<style>
-  .form-container {
-    background: white;
-    border-radius: 12px;
-    padding: 2rem;
-    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-    max-width: 800px;
-    margin: 0 auto;
-  }
+{% block deck_content %}
+<div class="deck-content-card" style="max-width:700px;">
+  <form method="POST" action="/deck/{{ deck.deck_id }}/cooldown/update" class="cooldown-form">
+    <div class="df-form-group">
+      <label for="cooldown">Free Pack Cooldown (hours) *</label>
+      <input type="number" id="cooldown" name="free_pack_cooldown_hours"
+             min="1" max="168" value="{{ deck.free_pack_cooldown_hours }}" required>
+      <small>Time between free pack claims (1–168 hours). Default: 8 hours</small>
+    </div>
 
-  .form-group {
-    margin-bottom: 1.5rem;
-  }
+    <div class="df-info-box">
+      <strong>About Free Pack Cooldown</strong>
+      <p style="margin:0.5rem 0 0.25rem;">Controls how often players can claim free packs from this deck on their Discord server.</p>
+      <ul style="margin:0.25rem 0 0 1rem;padding:0;">
+        <li><strong>Minimum:</strong> 1 hour (very frequent)</li>
+        <li><strong>Maximum:</strong> 168 hours (once per week)</li>
+        <li><strong>Recommended:</strong> 8–24 hours for balanced gameplay</li>
+      </ul>
+    </div>
 
-  .form-group label {
-    display: block;
-    margin-bottom: 0.5rem;
-    font-weight: 600;
-    color: #374151;
-  }
-
-  .form-group input {
-    width: 100%;
-    padding: 0.75rem;
-    border: 2px solid #d1d5db;
-    border-radius: 8px;
-    font-size: 1rem;
-  }
-
-  .form-group small {
-    display: block;
-    margin-top: 0.25rem;
-    color: #6b7280;
-    font-size: 0.875rem;
-  }
-
-  .form-actions {
-    display: flex;
-    gap: 1rem;
-    margin-top: 2rem;
-  }
-
-  .btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.75rem 1.5rem;
-    border-radius: 8px;
-    text-decoration: none;
-    font-weight: 600;
-    border: 2px solid transparent;
-    cursor: pointer;
-    font-size: 1rem;
-  }
-
-  .btn-primary {
-    background: #667eea;
-    color: white;
-    border-color: #5568d3;
-  }
-
-  .btn-secondary {
-    background: white;
-    color: #374151;
-    border-color: #d1d5db;
-  }
-</style>
-
-<div class="form-container">
-    <h2>Edit Free Pack Cooldown</h2>
-    <h3>{{ deck.name }}</h3>
-    
-    <form method="POST" action="/deck/{{ deck.deck_id }}/cooldown/update" class="cooldown-form">
-        <div class="form-group">
-            <label for="cooldown">Free Pack Cooldown (hours) *</label>
-            <input type="number" id="cooldown" name="free_pack_cooldown_hours" 
-                   min="1" max="168" value="{{ deck.free_pack_cooldown_hours }}" required>
-            <small>Time between free pack claims (1-168 hours). Default: 8 hours</small>
-        </div>
-        
-        <div class="info-box">
-            <h4>ℹ️ About Free Pack Cooldown</h4>
-            <p>This setting controls how often players can claim free packs from this deck on their Discord server.</p>
-            <ul>
-                <li><strong>Minimum:</strong> 1 hour (very frequent)</li>
-                <li><strong>Maximum:</strong> 168 hours (once per week)</li>
-                <li><strong>Recommended:</strong> 8-24 hours for balanced gameplay</li>
-            </ul>
-        </div>
-        
-        <div class="form-actions">
-            <a href="/deck/{{ deck.deck_id }}/edit" class="btn btn-secondary">Cancel</a>
-            <button type="submit" class="btn btn-primary">Update Cooldown</button>
-        </div>
-    </form>
+    <div style="display:flex;gap:1rem;margin-top:1.5rem;">
+      <button type="submit" class="df-btn df-btn-primary">Update Cooldown</button>
+      <a href="/deck/{{ deck.deck_id }}/edit" class="df-btn df-btn-secondary">Cancel</a>
+    </div>
+  </form>
 </div>
+{% endblock %}
 
-<style>
-.info-box {
-    background: #e8f4f8;
-    border-left: 4px solid #5865f2;
-    padding: 15px;
-    margin: 20px 0;
-    border-radius: 4px;
-}
-
-.info-box h4 {
-    margin-top: 0;
-    color: #5865f2;
-}
-
-.info-box ul {
-    margin-bottom: 0;
-}
-</style>
-
+{% block scripts %}
 <script>
 document.querySelector('.cooldown-form').addEventListener('submit', function(e) {
-    const cooldown = parseInt(document.getElementById('cooldown').value);
-    if (cooldown < 1 || cooldown > 168) {
-        e.preventDefault();
-        alert('Cooldown must be between 1 and 168 hours');
-        return false;
-    }
+  const val = parseInt(document.getElementById('cooldown').value);
+  if (val < 1 || val > 168) {
+    e.preventDefault();
+    alert('Cooldown must be between 1 and 168 hours');
+  }
 });
 </script>
 {% endblock %}

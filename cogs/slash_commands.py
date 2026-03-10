@@ -1,5 +1,5 @@
 """
-DeckForge Slash Commands
+Deck Foundry Slash Commands
 Slash command implementations for Discord
 """
 import discord
@@ -92,9 +92,7 @@ class SlashCommands(commands.Cog):
         card_name: str
     ):
         """View detailed information about a card from your inventory"""
-        print(f"[CARDINFO] Starting for user {interaction.user.id}, card_name={card_name}")
         await interaction.response.defer()
-        print("[CARDINFO] Deferred response")
         
         guild_id = interaction.guild_id
         user_id = interaction.user.id
@@ -103,7 +101,6 @@ class SlashCommands(commands.Cog):
             await interaction.followup.send("❌ This command can only be used in a server!", ephemeral=True)
             return
         
-        print("[CARDINFO] Getting deck...")
         deck = await self.bot.get_server_deck(guild_id)
         if not deck:
             await interaction.followup.send(
@@ -114,15 +111,12 @@ class SlashCommands(commands.Cog):
             return
         
         deck_id = deck['deck_id']
-        print(f"[CARDINFO] Got deck_id={deck_id}")
         
         async with self.db_pool.acquire() as conn:
             instance = None
             
             try:
-                print(f"[CARDINFO] Parsing UUID from: {card_name}")
                 instance_id = uuid.UUID(card_name)
-                print(f"[CARDINFO] Parsed UUID: {instance_id}, querying...")
                 instance = await conn.fetchrow(
                     """SELECT uc.*, c.name, c.rarity, c.image_url, c.mergeable, c.max_merge_level
                        FROM user_cards uc
@@ -130,9 +124,7 @@ class SlashCommands(commands.Cog):
                        WHERE uc.instance_id = $1 AND uc.user_id = $2 AND uc.recycled_at IS NULL""",
                     instance_id, user_id
                 )
-                print(f"[CARDINFO] Query done, instance={instance is not None}")
-            except (ValueError, TypeError) as e:
-                print(f"[CARDINFO] UUID parse failed: {e}, trying name search")
+            except (ValueError, TypeError):
                 instance = await conn.fetchrow(
                     """SELECT uc.*, c.name, c.rarity, c.image_url, c.mergeable, c.max_merge_level
                        FROM user_cards uc
@@ -150,22 +142,17 @@ class SlashCommands(commands.Cog):
                 )
                 return
             
-            print("[CARDINFO] Extracting instance data...")
             card_id = instance['card_id']
             merge_level = instance['merge_level']
             locked_perk = instance['locked_perk']
             instance_id = instance['instance_id']
-            print(f"[CARDINFO] card_id={card_id}, merge_level={merge_level}, locked_perk={locked_perk}")
             
-            print("[CARDINFO] Fetching owned_count...")
             owned_count = await conn.fetchval(
                 """SELECT COUNT(*) FROM user_cards 
                    WHERE user_id = $1 AND card_id = $2 AND recycled_at IS NULL""",
                 user_id, card_id
             )
-            print(f"[CARDINFO] owned_count={owned_count}")
             
-            print("[CARDINFO] Fetching template_fields...")
             template_fields = await conn.fetch(
                 """SELECT ctf.field_value, ct.field_name, ct.field_type, ct.template_id
                    FROM card_template_fields ctf
@@ -174,11 +161,9 @@ class SlashCommands(commands.Cog):
                    ORDER BY ct.field_order""",
                 card_id
             )
-            print(f"[CARDINFO] template_fields count={len(template_fields)}")
             
             overrides = {}
             if merge_level > 0:
-                print("[CARDINFO] Fetching overrides...")
                 override_rows = await conn.fetch(
                     """SELECT template_id, overridden_value, metadata
                        FROM user_card_field_overrides
@@ -186,35 +171,26 @@ class SlashCommands(commands.Cog):
                     instance_id
                 )
                 overrides = {row['template_id']: row for row in override_rows}
-                print(f"[CARDINFO] overrides count={len(overrides)}")
         
-        print("[CARDINFO] Building embed...")
         from utils.merge_helpers import format_merge_level_display, calculate_cumulative_perk_boost
         
         merge_display = format_merge_level_display(merge_level) if merge_level > 0 else ""
         title = f"{instance['name']} {merge_display}".strip()
-        print(f"[CARDINFO] title={title}")
         
-        print("[CARDINFO] Creating embed object...")
         color = RARITY_COLORS.get(instance['rarity'], discord.Color.default())
         embed = discord.Embed(title=title, color=color)
         embed.add_field(name="Rarity", value=instance['rarity'], inline=True)
-        print("[CARDINFO] Added rarity field")
         
         if merge_level > 0:
             embed.add_field(name="Merge Level", value=str(merge_level), inline=True)
             if locked_perk:
                 embed.add_field(name="Locked Perk", value=f"🔒 {locked_perk}", inline=True)
-            print("[CARDINFO] Added merge fields")
         
         if instance['image_url']:
             embed.set_image(url=instance['image_url'])
-            print("[CARDINFO] Set image")
         
-        print(f"[CARDINFO] Processing {len(template_fields)} template fields...")
         if template_fields:
-            for i, field in enumerate(template_fields):
-                print(f"[CARDINFO] Field {i}: {field['field_name']}")
+            for field in template_fields:
                 field_name = field['field_name']
                 base_value = field['field_value'] or 'N/A'
                 
@@ -222,7 +198,6 @@ class SlashCommands(commands.Cog):
                     override = overrides[field['template_id']]
                     boosted_value = override['overridden_value']
                     metadata = override['metadata']
-                    # Parse JSON string if needed
                     if isinstance(metadata, str):
                         import json
                         try:
@@ -235,7 +210,6 @@ class SlashCommands(commands.Cog):
                     display_value = base_value
                 
                 embed.add_field(name=field_name, value=display_value, inline=True)
-                print(f"[CARDINFO] Added field {field_name}")
         
         is_mergeable = instance['mergeable'] if 'mergeable' in instance.keys() else False
         max_merge = instance['max_merge_level'] if 'max_merge_level' in instance.keys() else 10
@@ -271,9 +245,7 @@ class SlashCommands(commands.Cog):
                 inline=False
             )
         
-        print("[CARDINFO] Sending embed...")
         await interaction.followup.send(embed=embed)
-        print("[CARDINFO] Done!")
     
     @app_commands.command(name="balance", description="Check your credit balance for this server's deck")
     async def balance(self, interaction: discord.Interaction):
@@ -308,11 +280,11 @@ class SlashCommands(commands.Cog):
         
         await interaction.response.send_message(embed=embed, ephemeral=True)
     
-    @app_commands.command(name="help", description="Get help with DeckForge commands")
+    @app_commands.command(name="help", description="Get help with Deck Foundry commands")
     async def help_command(self, interaction: discord.Interaction):
         """Display help information about available commands"""
         embed = discord.Embed(
-            title="🚀 DeckForge Help",
+            title="🚀 Deck Foundry Help",
             description="Collect rocket-themed trading cards and build your collection!",
             color=discord.Color.blue()
         )

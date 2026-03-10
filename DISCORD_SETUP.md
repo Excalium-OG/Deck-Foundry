@@ -2,10 +2,10 @@
 
 ## Step 1: Enable Privileged Intents
 
-The DeckForge bot requires certain privileged intents to function properly. You must enable these in the Discord Developer Portal:
+The Deck Foundry bot requires certain privileged intents to function properly. You must enable these in the Discord Developer Portal:
 
 1. Go to https://discord.com/developers/applications
-2. Select your DeckForge bot application
+2. Select your Deck Foundry bot application
 3. Click on **"Bot"** in the left sidebar
 4. Scroll down to **"Privileged Gateway Intents"**
 5. Enable the following intents:
@@ -45,5 +45,5 @@ Once the intents are enabled and the bot is invited:
 - Check that the bot has permissions in the channel
 
 **"Invalid token" error?**
-- Verify DECKFORGE_BOT_TOKEN is set correctly
+- Verify DECKFOUNDRY_BOT_TOKEN is set correctly
 - Make sure you copied the entire token

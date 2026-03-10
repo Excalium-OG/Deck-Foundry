@@ -1,0 +1,256 @@
+{% extends "base.html" %}
+
+{% block content %}
+<style>
+  .deck-layout {
+    display: flex;
+    gap: 1.5rem;
+    align-items: flex-start;
+  }
+
+  .deck-sidenav {
+    width: 210px;
+    flex-shrink: 0;
+    background: #333333;
+    border: 2px solid #876317;
+    border-radius: 12px;
+    padding: 0.75rem 0 1rem;
+    position: sticky;
+    top: 80px;
+  }
+
+  .sidenav-deck-name {
+    padding: 0.6rem 1.25rem 0.75rem;
+    color: rgba(255,255,255,0.5);
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+    margin-bottom: 0.5rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .sidenav-section {
+    padding: 0.7rem 1.25rem 0.3rem;
+    color: rgba(255,255,255,0.35);
+    font-size: 0.68rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    margin-top: 0.25rem;
+  }
+
+  .sidenav-link {
+    display: block;
+    padding: 0.6rem 1.25rem;
+    color: rgba(255,255,255,0.65);
+    text-decoration: none;
+    font-size: 0.88rem;
+    font-weight: 500;
+    border-left: 3px solid transparent;
+    transition: all 0.15s;
+  }
+
+  .sidenav-link:hover {
+    color: white;
+    background: rgba(255,255,255,0.07);
+  }
+
+  .sidenav-link.active {
+    color: white;
+    border-left-color: #756434;
+    background: rgba(102,126,234,0.18);
+    font-weight: 600;
+  }
+
+  .deck-main {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .deck-page-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1.25rem;
+  }
+
+  .deck-page-header h2 {
+    margin: 0;
+    color: white;
+    font-size: 1.4rem;
+    font-weight: 700;
+  }
+
+  .deck-content-card {
+    background: white;
+    border-radius: 12px;
+    padding: 2rem;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+  }
+
+  .df-section {
+    margin: 2rem 0;
+  }
+
+  .df-section:first-child {
+    margin-top: 0;
+  }
+
+  .df-section h3 {
+    margin-bottom: 1rem;
+    color: #374151;
+    font-size: 1.1rem;
+  }
+
+  .df-form-group {
+    margin-bottom: 1.5rem;
+  }
+
+  .df-form-group label {
+    display: block;
+    margin-bottom: 0.5rem;
+    font-weight: 600;
+    color: #374151;
+  }
+
+  .df-form-group input,
+  .df-form-group textarea,
+  .df-form-group select {
+    width: 100%;
+    padding: 0.75rem;
+    border: 2px solid #d1d5db;
+    border-radius: 8px;
+    font-size: 1rem;
+    font-family: inherit;
+    box-sizing: border-box;
+  }
+
+  .df-form-group input:focus,
+  .df-form-group textarea:focus,
+  .df-form-group select:focus {
+    outline: none;
+    border-color: #667eea;
+  }
+
+  .df-form-group small {
+    display: block;
+    margin-top: 0.25rem;
+    color: #6b7280;
+    font-size: 0.875rem;
+  }
+
+  .df-form-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1rem;
+  }
+
+  .df-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1.5rem;
+    border-radius: 8px;
+    text-decoration: none;
+    font-weight: 600;
+    border: 2px solid transparent;
+    cursor: pointer;
+    font-size: 1rem;
+    transition: opacity 0.15s;
+  }
+
+  .df-btn:hover {
+    opacity: 0.88;
+  }
+
+  .df-btn-primary {
+    background: #667eea;
+    color: white;
+    border-color: #5568d3;
+  }
+
+  .df-btn-secondary {
+    background: white;
+    color: #374151;
+    border-color: #d1d5db;
+  }
+
+  .df-btn-danger {
+    background: #ef4444;
+    color: white;
+    border-color: #dc2626;
+  }
+
+  .df-btn-sm {
+    padding: 0.5rem 1rem;
+    font-size: 0.875rem;
+  }
+
+  .df-info-box {
+    background: #f0f9ff;
+    border-left: 4px solid #3b82f6;
+    padding: 1rem;
+    margin: 1rem 0;
+    border-radius: 4px;
+    font-size: 0.9rem;
+  }
+
+  .df-empty-state {
+    text-align: center;
+    color: #6b7280;
+    padding: 3rem;
+    font-style: italic;
+  }
+</style>
+
+<div class="deck-layout">
+  <nav class="deck-sidenav">
+    <div class="sidenav-deck-name">{{ deck.name }}</div>
+
+    <div class="sidenav-section">Cards</div>
+    <a href="/deck/{{ deck.deck_id }}/edit"
+       class="sidenav-link {% if active_section == 'overview' %}active{% endif %}">
+      Overview &amp; Cards
+    </a>
+    <a href="/deck/{{ deck.deck_id }}/card/new"
+       class="sidenav-link {% if active_section == 'add_card' %}active{% endif %}">
+      Add New Card
+    </a>
+    <a href="/deck/{{ deck.deck_id }}/template"
+       class="sidenav-link {% if active_section == 'template' %}active{% endif %}">
+      Card Template
+    </a>
+
+    <div class="sidenav-section">Configuration</div>
+    <a href="/deck/{{ deck.deck_id }}/merge-perks"
+       class="sidenav-link {% if active_section == 'merge_perks' %}active{% endif %}">
+      Merge Perks
+    </a>
+    <a href="/deck/{{ deck.deck_id }}/activities"
+       class="sidenav-link {% if active_section == 'activities' %}active{% endif %}">
+      Card Activities
+    </a>
+    <a href="/deck/{{ deck.deck_id }}/cooldown"
+       class="sidenav-link {% if active_section == 'cooldown' %}active{% endif %}">
+      Edit Cooldown
+    </a>
+    <a href="/deck/{{ deck.deck_id }}/rarity"
+       class="sidenav-link {% if active_section == 'rarity' %}active{% endif %}">
+      Edit Drop Rates
+    </a>
+  </nav>
+
+  <div class="deck-main">
+    <div class="deck-page-header">
+      <h2>{% block page_title %}{{ deck.name }}{% endblock %}</h2>
+      <a href="/dashboard" class="df-btn df-btn-secondary">Back to Dashboard</a>
+    </div>
+
+    {% block deck_content %}{% endblock %}
+  </div>
+</div>
+{% endblock %}

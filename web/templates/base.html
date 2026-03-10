@@ -3,19 +3,131 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}DeckForge Admin Portal{% endblock %}</title>
-    <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}?v=2025111601">
+    <title>{% block title %}Deck Foundry Web Portal{% endblock %}</title>
+    <link rel="icon" type="image/png" href="/static/logo 2.png">
+    <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}?v=2026030201">
+    <style>
+        body {
+            margin: 0;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: linear-gradient(135deg, #2E2E2E 0%, #333333 100%);
+            min-height: 100vh;
+        }
+        .navbar {
+            background: linear-gradient(90deg, #756434 0%, #876317 100%);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+            padding: 0.85rem 0;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+        .nav-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 1.5rem;
+        }
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: white;
+            text-decoration: none;
+        }
+        .logo img {
+            height: 42px;
+            width: auto;
+        }
+        .nav-links {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            flex: 1;
+            justify-content: center;
+        }
+        .nav-link {
+            color: rgba(255,255,255,0.85);
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 0.95rem;
+            padding: 0.45rem 0.9rem;
+            border-radius: 6px;
+            transition: background 0.2s, color 0.2s;
+        }
+        .nav-link:hover {
+            background: rgba(255,255,255,0.15);
+            color: white;
+        }
+        .nav-user {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+        .nav-user span {
+            color: rgba(255,255,255,0.9);
+            font-weight: 500;
+            font-size: 0.9rem;
+        }
+        .nav-user .btn {
+            padding: 0.4rem 1rem;
+            border-radius: 6px;
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 0.9rem;
+            background: rgba(255,255,255,0.15);
+            color: white;
+            border: 1px solid rgba(255,255,255,0.3);
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        .nav-user .btn:hover {
+            background: rgba(255,255,255,0.25);
+        }
+        .nav-user .btn-primary {
+            background: white;
+            color: #667eea;
+            border-color: white;
+        }
+        .nav-user .btn-primary:hover {
+            background: rgba(255,255,255,0.9);
+        }
+        .container {
+            max-width: 1200px;
+            margin: 2rem auto;
+            padding: 0 2rem;
+            min-height: calc(100vh - 200px);
+        }
+    </style>
 </head>
 <body>
     <nav class="navbar">
         <div class="nav-container">
-            <h1 class="logo">DeckForge</h1>
-            {% if user %}
+            <a href="/" class="logo"><img src="/static/logo 2.png" alt="Deck Foundry logo">Deck Foundry</a>
+            <div class="nav-links">
+                {% if user %}
+                <a href="/dashboard" class="nav-link">Dashboard</a>
+                <a href="/marketplace" class="nav-link">Marketplace</a>
+                {% if is_global_admin is defined and is_global_admin %}
+                <a href="/admin" class="nav-link">Administration</a>
+                {% endif %}
+                {% else %}
+                <a href="/faq" class="nav-link">FAQ</a>
+                <a href="/about" class="nav-link">About</a>
+                {% endif %}
+            </div>
             <div class="nav-user">
+                {% if user %}
                 <span>{{ user.username }}#{{ user.discriminator }}</span>
                 <a href="/logout" class="btn btn-secondary">Logout</a>
+                {% else %}
+                <a href="/login" class="btn btn-primary">Login with Discord</a>
+                {% endif %}
             </div>
-            {% endif %}
         </div>
     </nav>
 
@@ -23,8 +135,9 @@
         {% block content %}{% endblock %}
     </main>
 
-    <footer>
-        <p>&copy; 2025 DeckForge | Custom Trading Card Decks</p>
+    <footer style="text-align:center;padding:1.5rem 2rem;color:rgba(255,255,255,0.5);font-size:0.85rem;">
+        &copy; 2026 Deck Foundry &nbsp;|&nbsp;
+        <a href="/terms" style="color:rgba(255,255,255,0.6);text-decoration:none;font-weight:600;">Terms of Use</a>
     </footer>
 
     {% block scripts %}{% endblock %}

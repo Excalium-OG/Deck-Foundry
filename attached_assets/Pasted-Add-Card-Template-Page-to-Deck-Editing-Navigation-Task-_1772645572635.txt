@@ -1,0 +1,57 @@
+Add “Card Template” Page to Deck Editing Navigation
+Task:
+Extend the DeckForge deck editing interface by adding a new page called “Card Template” to the left‑side navigation panel within the deck editing tree. This page will allow deck creators to modify the card template after deck creation.
+1. Add “Card Template” to the left navigation
+- Add a new navigation button labeled “Card Template” in the left‑side deck editing navigation panel.
+- This button should appear only when the user is inside the deck editing tree, alongside:
+- Card Activities
+- Edit Cooldown
+- Edit Drop Rates
+- Add New Card
+- Merge Perks
+- “Back to Dashboard” remains in the top‑right and is not moved.
+2. Create the new Card Template page
+The Card Template page must allow users to:
+- Add new attributes to the card template
+- Remove existing attributes
+- Edit existing attributes (rename, change type, modify dropdown options, etc.)
+- Support all attribute types currently used by DeckForge:
+- Number-based attributes
+- String attributes
+- Dropdown attributes (with editable option lists)
+3. Dropdown attribute editing rules
+- Users must be able to add new dropdown options.
+- Users must be able to remove existing dropdown options.
+- If a dropdown option is removed, any existing cards using that option must have the value set to null.
+4. Propagation rules for template changes
+When the card template is modified:
+- New attributes must be added to all existing cards with a default value:
+- Number attributes → 0
+- String attributes → "" (empty string)
+- Dropdown attributes → null
+- Removed attributes must be removed from all existing cards.
+- Renamed attributes should update the attribute key on all cards.
+- Removed dropdown options must set affected card values to null.
+5. User responsibility for updating cards
+- After template changes, existing cards may contain blank, zero, or null values.
+- The UI should clearly indicate that users must manually update their cards to fill in the new or corrected attribute values.
+- No automatic guessing or migration of values should occur beyond the defaulting rules above.
+6. Page layout and functionality
+The Card Template page should include:
+- A list of all current template attributes
+- Buttons to Add Attribute, Edit Attribute, and Remove Attribute
+- For dropdown attributes:
+- A list of options
+- Buttons to Add Option and Remove Option
+- A save/confirm button to apply template changes
+- Clear warnings when removing attributes or dropdown options, explaining how existing cards will be affected
+7. Backend and data model updates
+- Update the deck model to support editing the card template after deck creation.
+- Ensure all template changes propagate to existing cards according to the rules above.
+- Ensure the card editing pages correctly display new attributes and allow users to update them.
+8. Deliverables
+- New Card Template page
+- Updated left‑side navigation
+- Updated backend logic for template editing and propagation
+- Updated card editing UI to reflect new or changed attributes
+- Clean, maintainable code consistent with the existing DeckForge structure

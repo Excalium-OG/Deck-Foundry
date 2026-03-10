@@ -11,11 +11,11 @@ from starlette.middleware.sessions import SessionMiddleware
 import httpx
 from typing import Optional, Dict, List
 from datetime import datetime, timedelta
-from object_storage import ObjectStorageService
+from web.object_storage import ObjectStorageService
 from fastapi.staticfiles import StaticFiles as BaseStaticFiles
 
 # Initialize FastAPI app
-app = FastAPI(title="DeckForge Admin Portal")
+app = FastAPI(title="Deck Foundry Web Portal")
 
 # Add session middleware for OAuth with proper cookie settings for iframe
 app.add_middleware(
@@ -100,14 +100,18 @@ async def get_current_user(request: Request) -> Optional[Dict]:
             }
     return None
 
-# Helper: Check if user is global admin
+# Current terms version — increment this string to require all users to re-accept
+TERMS_VERSION = "1.0"
+
+# Admin IDs - mirrors bot.py fallback logic
+_ADMIN_IDS = [190506752112852992]
+_admin_ids_env = os.getenv("ADMIN_IDS", "")
+if _admin_ids_env:
+    _ADMIN_IDS = [int(id.strip()) for id in _admin_ids_env.split(",") if id.strip()]
+
 def is_global_admin(user_id: int) -> bool:
     """Check if user is a global admin"""
-    admin_ids_str = os.getenv("ADMIN_IDS", "")
-    if not admin_ids_str:
-        return False
-    admin_ids = [int(id.strip()) for id in admin_ids_str.split(",") if id.strip()]
-    return user_id in admin_ids
+    return int(user_id) in _ADMIN_IDS
 
 # Helper: Get user's managed guilds from Discord API
 async def get_user_managed_guilds(access_token: str) -> List[Dict]:
@@ -150,15 +154,16 @@ async def require_auth(request: Request):
         raise HTTPException(status_code=401, detail="Not authenticated")
     return user
 
-# Dependency: Require admin access
+# Dependency: Require authenticated access (any Discord user)
 async def require_admin(request: Request, user = Depends(require_auth)):
-    """Dependency to require admin access"""
-    if not is_global_admin(user['id']):
-        # Check if user manages any servers
-        managed_guilds = await get_user_managed_guilds(user.get('access_token', ''))
-        if not managed_guilds:
-            raise HTTPException(status_code=403, detail="Insufficient permissions")
+    """Dependency to require authentication. Any Discord user may access deck features."""
     return user
+
+def check_deck_disabled(deck, user_id):
+    """Check if deck is disabled and user is not global admin. Returns True if blocked."""
+    if deck.get('disabled', False) and not is_global_admin(user_id):
+        return True
+    return False
 
 @app.on_event("startup")
 async def startup():
@@ -180,6 +185,86 @@ async def home(request: Request):
     if user:
         return RedirectResponse(url="/dashboard")
     return templates.TemplateResponse("login.html", {"request": request})
+
+@app.get("/terms", response_class=HTMLResponse)
+async def terms(request: Request):
+    """Terms of Use page"""
+    user = await get_current_user(request)
+    return templates.TemplateResponse("terms.html", {
+        "request": request,
+        "user": user,
+        "is_global_admin": is_global_admin(user['id']) if user else False
+    })
+
+@app.get("/accept-terms", response_class=HTMLResponse)
+async def accept_terms_page(request: Request, token: str = ""):
+    """Show terms acceptance page for users completing first login"""
+    if not token:
+        return RedirectResponse(url="/")
+    pool = await get_db_pool()
+    async with pool.acquire() as conn:
+        pending = await conn.fetchrow(
+            "SELECT * FROM pending_logins WHERE token = $1 AND expires_at > NOW()",
+            token
+        )
+    if not pending:
+        return RedirectResponse(url="/?error=session_expired")
+    return templates.TemplateResponse("accept_terms.html", {
+        "request": request,
+        "user": None,
+        "is_global_admin": False,
+        "pending_token": token,
+        "terms_version": TERMS_VERSION
+    })
+
+@app.post("/accept-terms")
+async def accept_terms_submit(request: Request, token: str = Form(...), accepted: str = Form(None)):
+    """Process terms acceptance, complete login, and redirect to dashboard"""
+    if accepted != "yes":
+        return RedirectResponse(url=f"/accept-terms?token={token}&error=must_accept", status_code=303)
+
+    pool = await get_db_pool()
+    async with pool.acquire() as conn:
+        pending = await conn.fetchrow(
+            "SELECT * FROM pending_logins WHERE token = $1 AND expires_at > NOW()",
+            token
+        )
+        if not pending:
+            return RedirectResponse(url="/?error=session_expired", status_code=303)
+
+        async with conn.transaction():
+            # Record acceptance
+            await conn.execute(
+                """INSERT INTO terms_acceptances (user_id, terms_version)
+                   VALUES ($1, $2) ON CONFLICT DO NOTHING""",
+                pending['user_id'], TERMS_VERSION
+            )
+            # Create the real session
+            session_id = secrets.token_urlsafe(32)
+            await conn.execute(
+                """INSERT INTO user_sessions
+                   (session_id, user_id, username, discriminator, avatar, access_token)
+                   VALUES ($1, $2, $3, $4, $5, $6)""",
+                session_id,
+                pending['user_id'],
+                pending['username'],
+                pending['discriminator'],
+                pending['avatar'],
+                pending['access_token']
+            )
+            # Clean up the pending login
+            await conn.execute("DELETE FROM pending_logins WHERE token = $1", token)
+
+    response = RedirectResponse(url="/dashboard", status_code=303)
+    response.set_cookie(
+        key="session_id",
+        value=session_id,
+        max_age=7*24*60*60,
+        httponly=True,
+        secure=True,
+        samesite="none"
+    )
+    return response
 
 @app.get("/login")
 async def login(request: Request):
@@ -266,7 +351,33 @@ async def auth_callback(request: Request):
             
             user_data = user_response.json()
         
-        # Create session in database
+        user_id = int(user_data['id'])
+
+        # Check if user has accepted the current terms version
+        async with pool.acquire() as conn:
+            accepted = await conn.fetchval(
+                "SELECT 1 FROM terms_acceptances WHERE user_id = $1 AND terms_version = $2",
+                user_id, TERMS_VERSION
+            )
+
+        if not accepted:
+            # Store OAuth data temporarily and send user to terms acceptance page
+            pending_token = secrets.token_urlsafe(32)
+            async with pool.acquire() as conn:
+                await conn.execute(
+                    """INSERT INTO pending_logins
+                       (token, user_id, username, discriminator, avatar, access_token)
+                       VALUES ($1, $2, $3, $4, $5, $6)""",
+                    pending_token,
+                    user_id,
+                    user_data['username'],
+                    user_data.get('discriminator', '0'),
+                    user_data.get('avatar'),
+                    access_token
+                )
+            return RedirectResponse(url=f"/accept-terms?token={pending_token}")
+
+        # Terms already accepted — create session and log in
         session_id = secrets.token_urlsafe(32)
         async with pool.acquire() as conn:
             await conn.execute(
@@ -274,7 +385,7 @@ async def auth_callback(request: Request):
                    (session_id, user_id, username, discriminator, avatar, access_token)
                    VALUES ($1, $2, $3, $4, $5, $6)""",
                 session_id,
-                int(user_data['id']),
+                user_id,
                 user_data['username'],
                 user_data.get('discriminator', '0'),
                 user_data.get('avatar'),
@@ -317,19 +428,15 @@ async def dashboard(request: Request, user = Depends(require_admin)):
     """Main dashboard showing user's managed servers and decks"""
     pool = await get_db_pool()
     
-    # Get user's managed guilds
     managed_guilds = await get_user_managed_guilds(user.get('access_token', ''))
     
-    # Get deck assignments for these guilds
     async with pool.acquire() as conn:
-        # Get all decks created by this user
         user_decks = await conn.fetch(
             "SELECT * FROM decks WHERE created_by = $1 ORDER BY created_at DESC",
             user['id']
         )
         user_deck_ids = {d['deck_id'] for d in user_decks}
         
-        # Get server-deck assignments
         guild_ids = [int(g['id']) for g in managed_guilds]
         server_decks = {}
         adopted_deck_ids = set()
@@ -340,17 +447,14 @@ async def dashboard(request: Request, user = Depends(require_admin)):
                 guild_ids
             )
             server_decks = {row['guild_id']: row['deck_id'] for row in assignments}
-            # Collect deck IDs that are adopted (assigned to user's servers but not created by user)
             adopted_deck_ids = {row['deck_id'] for row in assignments if row['deck_id'] not in user_deck_ids}
             
-            # Get mission channel settings
             mission_rows = await conn.fetch(
                 "SELECT guild_id, mission_channel_id, missions_enabled FROM server_mission_settings WHERE guild_id = ANY($1)",
                 guild_ids
             )
             mission_settings = {row['guild_id']: {'channel_id': row['mission_channel_id'], 'enabled': row['missions_enabled']} for row in mission_rows}
         
-        # Get adopted decks (assigned to user's servers but created by others)
         adopted_decks = []
         if adopted_deck_ids:
             adopted_decks = await conn.fetch(
@@ -358,15 +462,8 @@ async def dashboard(request: Request, user = Depends(require_admin)):
                 list(adopted_deck_ids)
             )
         
-        # If global admin, show all decks
-        if is_global_admin(user['id']):
-            all_decks = await conn.fetch(
-                "SELECT * FROM decks ORDER BY created_at DESC"
-            )
-        else:
-            all_decks = user_decks
+        all_decks = user_decks
     
-    # Combine guild info with deck assignments
     guilds_with_decks = []
     for guild in managed_guilds:
         guild_id = int(guild['id'])
@@ -427,7 +524,7 @@ async def assign_deck_to_server(
 @app.get("/api/server/{guild_id}/channels")
 async def get_server_channels(guild_id: int, user = Depends(require_admin)):
     """Get text channels the bot has access to in a guild"""
-    bot_token = os.getenv('DECKFORGE_BOT_TOKEN')
+    bot_token = os.getenv('DECKFOUNDRY_BOT_TOKEN')
     if not bot_token:
         return {"channels": [], "error": "Bot token not configured"}
     
@@ -566,7 +663,7 @@ async def marketplace(request: Request, user = Depends(require_auth)):
     pool = await get_db_pool()
     async with pool.acquire() as conn:
         rows = await conn.fetch(
-            "SELECT deck_id, name, created_by, created_at, public_description FROM decks WHERE is_public = TRUE ORDER BY created_at DESC"
+            "SELECT deck_id, name, created_by, created_at, public_description FROM decks WHERE is_public = TRUE AND disabled IS NOT TRUE ORDER BY created_at DESC"
         )
     decks = [dict(r) for r in rows]
 
@@ -575,6 +672,7 @@ async def marketplace(request: Request, user = Depends(require_auth)):
     return templates.TemplateResponse("marketplace.html", {
         "request": request,
         "user": user,
+        "is_global_admin": is_global_admin(user['id']),
         "decks": decks,
         "managed_guilds": managed_guilds
     })
@@ -585,11 +683,13 @@ async def set_deck_public(request: Request, deck_id: int, is_public: int = Form(
     """Toggle public visibility for a deck (owner or global admin only)"""
     pool = await get_db_pool()
     async with pool.acquire() as conn:
-        deck = await conn.fetchrow("SELECT created_by FROM decks WHERE deck_id = $1", deck_id)
+        deck = await conn.fetchrow("SELECT created_by, disabled FROM decks WHERE deck_id = $1", deck_id)
         if not deck:
             raise HTTPException(status_code=404, detail="Deck not found")
         if deck['created_by'] != user['id'] and not is_global_admin(user['id']):
             raise HTTPException(status_code=403, detail="You don't own this deck")
+        if check_deck_disabled(deck, user['id']):
+            raise HTTPException(status_code=403, detail="This deck has been disabled by an administrator")
         await conn.execute(
             "UPDATE decks SET is_public = $1, public_description = $2 WHERE deck_id = $3",
             bool(is_public), public_description or None, deck_id
@@ -614,7 +714,7 @@ async def adopt_deck(deck_id: int, guild_id: int = Form(...), user = Depends(req
     async with pool.acquire() as conn:
         # Verify the deck exists and is public
         public_deck = await conn.fetchrow(
-            "SELECT deck_id, name FROM decks WHERE deck_id = $1 AND is_public = TRUE",
+            "SELECT deck_id, name FROM decks WHERE deck_id = $1 AND is_public = TRUE AND disabled IS NOT TRUE",
             deck_id
         )
         if not public_deck:
@@ -701,6 +801,7 @@ async def view_deck(request: Request, deck_id: int, user = Depends(require_auth)
         return templates.TemplateResponse("view_deck.html", {
             "request": request,
             "user": user,
+            "is_global_admin": is_global_admin(user['id']),
             "deck": deck,
             "cards": cards_list,
             "template_fields": template_fields,
@@ -712,7 +813,8 @@ async def create_deck_form(request: Request, user = Depends(require_admin)):
     """Show deck creation form"""
     return templates.TemplateResponse("create_deck.html", {
         "request": request,
-        "user": user
+        "user": user,
+        "is_global_admin": is_global_admin(user['id'])
     })
 
 @app.post("/deck/create")
@@ -794,11 +896,12 @@ async def edit_deck_form(request: Request, deck_id: int, user = Depends(require_
         if not deck:
             raise HTTPException(status_code=404, detail="Deck not found")
         
-        # Check permissions
         if deck['created_by'] != user['id'] and not is_global_admin(user['id']):
             raise HTTPException(status_code=403, detail="You don't own this deck")
         
-        # Get template fields for this deck
+        if deck['disabled'] and not is_global_admin(user['id']):
+            return RedirectResponse(url=f"/deck/{deck_id}/view", status_code=303)
+        
         template_fields = await conn.fetch(
             """SELECT * FROM card_templates 
                WHERE deck_id = $1 
@@ -806,7 +909,6 @@ async def edit_deck_form(request: Request, deck_id: int, user = Depends(require_
             deck_id
         )
         
-        # Get number-type template fields for merge perks dropdown
         number_template_fields = await conn.fetch(
             """SELECT template_id, field_name FROM card_templates 
                WHERE deck_id = $1 AND field_type = 'number'
@@ -839,15 +941,253 @@ async def edit_deck_form(request: Request, deck_id: int, user = Depends(require_
             deck_id
         )
     
+    required_field_ids = {tf['template_id'] for tf in template_fields if tf['is_required']}
+    cards_list = []
+    for card in cards:
+        card_dict = dict(card)
+        tv_raw = card_dict.get('template_values') or []
+        tv_map = {}
+        for item in tv_raw:
+            if isinstance(item, str):
+                import json as _json
+                item = _json.loads(item)
+            elif not isinstance(item, dict):
+                item = dict(item)
+            tid = item.get('template_id')
+            fv = item.get('field_value')
+            if tid is not None:
+                tv_map[tid] = fv
+        card_dict['has_issues'] = bool(required_field_ids) and any(
+            tid not in tv_map or tv_map[tid] is None or str(tv_map[tid]).strip() == ''
+            for tid in required_field_ids
+        )
+        cards_list.append(card_dict)
+
     return templates.TemplateResponse("edit_deck.html", {
         "request": request,
         "user": user,
+        "is_global_admin": is_global_admin(user['id']),
         "template_fields": template_fields,
         "number_template_fields": number_template_fields,
         "merge_perks": merge_perks,
         "deck": dict(deck),
-        "cards": [dict(c) for c in cards]
+        "cards": cards_list,
+        "active_section": "overview"
     })
+
+@app.get("/deck/{deck_id}/card/new", response_class=HTMLResponse)
+async def add_card_page(request: Request, deck_id: int, user = Depends(require_admin)):
+    """Dedicated page for adding a new card to a deck"""
+    pool = await get_db_pool()
+    async with pool.acquire() as conn:
+        deck = await conn.fetchrow("SELECT * FROM decks WHERE deck_id = $1", deck_id)
+        if not deck:
+            raise HTTPException(status_code=404, detail="Deck not found")
+        if deck['created_by'] != user['id'] and not is_global_admin(user['id']):
+            raise HTTPException(status_code=403, detail="You don't own this deck")
+        if deck['disabled'] and not is_global_admin(user['id']):
+            return RedirectResponse(url=f"/deck/{deck_id}/view", status_code=303)
+        template_fields = await conn.fetch(
+            "SELECT * FROM card_templates WHERE deck_id = $1 ORDER BY field_order",
+            deck_id
+        )
+    return templates.TemplateResponse("add_card.html", {
+        "request": request,
+        "user": user,
+        "is_global_admin": is_global_admin(user['id']),
+        "deck": dict(deck),
+        "template_fields": template_fields,
+        "active_section": "add_card"
+    })
+
+@app.get("/deck/{deck_id}/merge-perks", response_class=HTMLResponse)
+async def merge_perks_page(request: Request, deck_id: int, user = Depends(require_admin)):
+    """Dedicated page for managing merge perks"""
+    pool = await get_db_pool()
+    async with pool.acquire() as conn:
+        deck = await conn.fetchrow("SELECT * FROM decks WHERE deck_id = $1", deck_id)
+        if not deck:
+            raise HTTPException(status_code=404, detail="Deck not found")
+        if deck['created_by'] != user['id'] and not is_global_admin(user['id']):
+            raise HTTPException(status_code=403, detail="You don't own this deck")
+        if deck['disabled'] and not is_global_admin(user['id']):
+            return RedirectResponse(url=f"/deck/{deck_id}/view", status_code=303)
+        number_template_fields = await conn.fetch(
+            "SELECT template_id, field_name FROM card_templates WHERE deck_id = $1 AND field_type = 'number' ORDER BY field_name",
+            deck_id
+        )
+        merge_perks = await conn.fetch(
+            "SELECT perk_name, base_boost, diminishing_factor FROM deck_merge_perks WHERE deck_id = $1 ORDER BY perk_name",
+            deck_id
+        )
+    return templates.TemplateResponse("merge_perks.html", {
+        "request": request,
+        "user": user,
+        "is_global_admin": is_global_admin(user['id']),
+        "deck": dict(deck),
+        "number_template_fields": number_template_fields,
+        "merge_perks": merge_perks,
+        "active_section": "merge_perks"
+    })
+
+@app.get("/deck/{deck_id}/template", response_class=HTMLResponse)
+async def card_template_page(request: Request, deck_id: int, user = Depends(require_admin)):
+    """Card Template management page — add/edit/delete template attributes"""
+    pool = await get_db_pool()
+    async with pool.acquire() as conn:
+        deck = await conn.fetchrow("SELECT * FROM decks WHERE deck_id = $1", deck_id)
+        if not deck:
+            raise HTTPException(status_code=404, detail="Deck not found")
+        if deck['created_by'] != user['id'] and not is_global_admin(user['id']):
+            raise HTTPException(status_code=403, detail="You don't own this deck")
+        if deck['disabled'] and not is_global_admin(user['id']):
+            return RedirectResponse(url=f"/deck/{deck_id}/view", status_code=303)
+        fields = await conn.fetch(
+            "SELECT template_id, field_name, field_type, dropdown_options, field_order, is_required FROM card_templates WHERE deck_id = $1 ORDER BY field_order, template_id",
+            deck_id
+        )
+        card_count = await conn.fetchval("SELECT COUNT(*) FROM cards WHERE deck_id = $1", deck_id)
+    return templates.TemplateResponse("card_template.html", {
+        "request": request,
+        "user": user,
+        "is_global_admin": is_global_admin(user['id']),
+        "deck": dict(deck),
+        "fields": fields,
+        "card_count": card_count,
+        "active_section": "template"
+    })
+
+
+@app.post("/deck/{deck_id}/template/field/add")
+async def add_template_field(request: Request, deck_id: int, user = Depends(require_admin)):
+    """Add a new attribute to the card template and propagate defaults to all existing cards"""
+    form_data = await request.form()
+    field_name = (form_data.get('field_name') or '').strip()
+    field_type = form_data.get('field_type', 'text')
+    dropdown_options = (form_data.get('dropdown_options') or '').strip() or None
+    is_required = form_data.get('is_required') == '1'
+
+    if not field_name or field_type not in ('text', 'number', 'dropdown'):
+        return RedirectResponse(url=f"/deck/{deck_id}/template?status=error&msg=Invalid+attribute+name+or+type", status_code=303)
+
+    pool = await get_db_pool()
+    async with pool.acquire() as conn:
+        deck = await conn.fetchrow("SELECT created_by, disabled FROM decks WHERE deck_id = $1", deck_id)
+        if not deck:
+            raise HTTPException(status_code=404, detail="Deck not found")
+        if deck['created_by'] != user['id'] and not is_global_admin(user['id']):
+            raise HTTPException(status_code=403, detail="You don't own this deck")
+        if check_deck_disabled(deck, user['id']):
+            raise HTTPException(status_code=403, detail="This deck has been disabled")
+
+        existing = await conn.fetchval(
+            "SELECT template_id FROM card_templates WHERE deck_id = $1 AND LOWER(field_name) = LOWER($2)",
+            deck_id, field_name
+        )
+        if existing:
+            return RedirectResponse(url=f"/deck/{deck_id}/template?status=duplicate", status_code=303)
+
+        max_order = await conn.fetchval(
+            "SELECT COALESCE(MAX(field_order), -1) FROM card_templates WHERE deck_id = $1", deck_id
+        )
+        new_field = await conn.fetchrow(
+            """INSERT INTO card_templates (deck_id, field_name, field_type, dropdown_options, field_order, is_required)
+               VALUES ($1, $2, $3, $4, $5, $6) RETURNING template_id""",
+            deck_id, field_name, field_type, dropdown_options, max_order + 1, is_required
+        )
+        template_id = new_field['template_id']
+
+        default_value = '0' if field_type == 'number' else (None if field_type == 'dropdown' else '')
+        card_ids = await conn.fetch("SELECT card_id FROM cards WHERE deck_id = $1", deck_id)
+        for card in card_ids:
+            await conn.execute(
+                """INSERT INTO card_template_fields (card_id, template_id, field_value)
+                   VALUES ($1, $2, $3) ON CONFLICT (card_id, template_id) DO NOTHING""",
+                card['card_id'], template_id, default_value
+            )
+
+    return RedirectResponse(url=f"/deck/{deck_id}/template?status=added", status_code=303)
+
+
+@app.post("/deck/{deck_id}/template/field/{template_id}/update")
+async def update_template_field(request: Request, deck_id: int, template_id: int, user = Depends(require_admin)):
+    """Update a template attribute — propagates dropdown option removals to existing cards"""
+    form_data = await request.form()
+    field_name = (form_data.get('field_name') or '').strip()
+    field_type = form_data.get('field_type', 'text')
+    dropdown_options = (form_data.get('dropdown_options') or '').strip() or None
+    is_required = form_data.get('is_required') == '1'
+
+    if not field_name or field_type not in ('text', 'number', 'dropdown'):
+        return RedirectResponse(url=f"/deck/{deck_id}/template?status=error&msg=Invalid+attribute+name+or+type", status_code=303)
+
+    pool = await get_db_pool()
+    async with pool.acquire() as conn:
+        deck = await conn.fetchrow("SELECT created_by, disabled FROM decks WHERE deck_id = $1", deck_id)
+        if not deck:
+            raise HTTPException(status_code=404, detail="Deck not found")
+        if deck['created_by'] != user['id'] and not is_global_admin(user['id']):
+            raise HTTPException(status_code=403, detail="You don't own this deck")
+        if check_deck_disabled(deck, user['id']):
+            raise HTTPException(status_code=403, detail="This deck has been disabled")
+
+        old_field = await conn.fetchrow(
+            "SELECT * FROM card_templates WHERE template_id = $1 AND deck_id = $2",
+            template_id, deck_id
+        )
+        if not old_field:
+            raise HTTPException(status_code=404, detail="Template field not found")
+
+        duplicate = await conn.fetchval(
+            "SELECT template_id FROM card_templates WHERE deck_id = $1 AND LOWER(field_name) = LOWER($2) AND template_id != $3",
+            deck_id, field_name, template_id
+        )
+        if duplicate:
+            return RedirectResponse(url=f"/deck/{deck_id}/template?status=duplicate", status_code=303)
+
+        if old_field['field_type'] == 'dropdown' and field_type == 'dropdown':
+            old_opts = {o.strip() for o in (old_field['dropdown_options'] or '').split(',') if o.strip()}
+            new_opts = {o.strip() for o in (dropdown_options or '').split(',') if o.strip()}
+            removed_opts = old_opts - new_opts
+            for removed in removed_opts:
+                await conn.execute(
+                    "UPDATE card_template_fields SET field_value = NULL WHERE template_id = $1 AND field_value = $2",
+                    template_id, removed
+                )
+        elif old_field['field_type'] == 'dropdown' and field_type != 'dropdown':
+            dropdown_options = None
+
+        await conn.execute(
+            """UPDATE card_templates SET field_name = $1, field_type = $2, dropdown_options = $3, is_required = $4
+               WHERE template_id = $5""",
+            field_name, field_type, dropdown_options, is_required, template_id
+        )
+
+    return RedirectResponse(url=f"/deck/{deck_id}/template?status=updated", status_code=303)
+
+
+@app.post("/deck/{deck_id}/template/field/{template_id}/delete")
+async def delete_template_field(request: Request, deck_id: int, template_id: int, user = Depends(require_admin)):
+    """Delete a template attribute — CASCADE removes all card values for this field"""
+    pool = await get_db_pool()
+    async with pool.acquire() as conn:
+        deck = await conn.fetchrow("SELECT created_by, disabled FROM decks WHERE deck_id = $1", deck_id)
+        if not deck:
+            raise HTTPException(status_code=404, detail="Deck not found")
+        if deck['created_by'] != user['id'] and not is_global_admin(user['id']):
+            raise HTTPException(status_code=403, detail="You don't own this deck")
+        if check_deck_disabled(deck, user['id']):
+            raise HTTPException(status_code=403, detail="This deck has been disabled")
+
+        deleted = await conn.fetchval(
+            "DELETE FROM card_templates WHERE template_id = $1 AND deck_id = $2 RETURNING template_id",
+            template_id, deck_id
+        )
+        if not deleted:
+            raise HTTPException(status_code=404, detail="Template field not found")
+
+    return RedirectResponse(url=f"/deck/{deck_id}/template?status=deleted", status_code=303)
+
 
 @app.post("/deck/{deck_id}/card/add")
 async def add_card_to_deck(
@@ -868,7 +1208,7 @@ async def add_card_to_deck(
     async with pool.acquire() as conn:
         # Verify deck ownership
         deck = await conn.fetchrow(
-            "SELECT created_by FROM decks WHERE deck_id = $1",
+            "SELECT created_by, disabled FROM decks WHERE deck_id = $1",
             deck_id
         )
         
@@ -877,6 +1217,9 @@ async def add_card_to_deck(
         
         if deck['created_by'] != user['id'] and not is_global_admin(user['id']):
             raise HTTPException(status_code=403, detail="You don't own this deck")
+        
+        if check_deck_disabled(deck, user['id']):
+            raise HTTPException(status_code=403, detail="This deck has been disabled by an administrator")
         
         # Insert card with basic fields and merge configuration
         card = await conn.fetchrow(
@@ -921,7 +1264,7 @@ async def delete_card_from_deck(
     async with pool.acquire() as conn:
         # Verify deck ownership
         deck = await conn.fetchrow(
-            "SELECT created_by FROM decks WHERE deck_id = $1",
+            "SELECT created_by, disabled FROM decks WHERE deck_id = $1",
             deck_id
         )
         
@@ -930,6 +1273,9 @@ async def delete_card_from_deck(
         
         if deck['created_by'] != user['id'] and not is_global_admin(user['id']):
             raise HTTPException(status_code=403, detail="You don't own this deck")
+        
+        if check_deck_disabled(deck, user['id']):
+            raise HTTPException(status_code=403, detail="This deck has been disabled by an administrator")
         
         # Delete card
         await conn.execute(
@@ -957,7 +1303,7 @@ async def add_merge_perk(
     async with pool.acquire() as conn:
         # Verify deck ownership
         deck = await conn.fetchrow(
-            "SELECT created_by FROM decks WHERE deck_id = $1",
+            "SELECT created_by, disabled FROM decks WHERE deck_id = $1",
             deck_id
         )
         
@@ -966,6 +1312,9 @@ async def add_merge_perk(
         
         if deck['created_by'] != user['id'] and not is_global_admin(user['id']):
             raise HTTPException(status_code=403, detail="You don't own this deck")
+        
+        if check_deck_disabled(deck, user['id']):
+            raise HTTPException(status_code=403, detail="This deck has been disabled by an administrator")
         
         # Insert merge perk (using default diminishing_factor of 0.85)
         try:
@@ -980,7 +1329,7 @@ async def add_merge_perk(
                 raise HTTPException(status_code=400, detail=f"Merge perk '{perk_name}' already exists for this deck")
             raise
     
-    return RedirectResponse(url=f"/deck/{deck_id}/edit", status_code=303)
+    return RedirectResponse(url=f"/deck/{deck_id}/merge-perks", status_code=303)
 
 @app.post("/deck/{deck_id}/merge_perk/{perk_name}/delete")
 async def delete_merge_perk(
@@ -995,7 +1344,7 @@ async def delete_merge_perk(
     async with pool.acquire() as conn:
         # Verify deck ownership
         deck = await conn.fetchrow(
-            "SELECT created_by FROM decks WHERE deck_id = $1",
+            "SELECT created_by, disabled FROM decks WHERE deck_id = $1",
             deck_id
         )
         
@@ -1005,13 +1354,16 @@ async def delete_merge_perk(
         if deck['created_by'] != user['id'] and not is_global_admin(user['id']):
             raise HTTPException(status_code=403, detail="You don't own this deck")
         
+        if check_deck_disabled(deck, user['id']):
+            raise HTTPException(status_code=403, detail="This deck has been disabled by an administrator")
+        
         # Delete merge perk
         await conn.execute(
             "DELETE FROM deck_merge_perks WHERE deck_id = $1 AND perk_name = $2",
             deck_id, perk_name
         )
     
-    return RedirectResponse(url=f"/deck/{deck_id}/edit", status_code=303)
+    return RedirectResponse(url=f"/deck/{deck_id}/merge-perks", status_code=303)
 
 @app.get("/deck/{deck_id}/activities", response_class=HTMLResponse)
 async def list_card_activities(request: Request, deck_id: int, user = Depends(require_admin)):
@@ -1030,19 +1382,58 @@ async def list_card_activities(request: Request, deck_id: int, user = Depends(re
         if deck['created_by'] != user['id'] and not is_global_admin(user['id']):
             raise HTTPException(status_code=403, detail="You don't own this deck")
         
+        if deck['disabled'] and not is_global_admin(user['id']):
+            return RedirectResponse(url=f"/deck/{deck['deck_id']}/view", status_code=303)
+        
         activities = await conn.fetch(
             """SELECT * FROM mission_templates 
                WHERE deck_id = $1 
                ORDER BY created_at DESC""",
             deck_id
         )
+        number_template_fields = await conn.fetch(
+            "SELECT template_id, field_name FROM card_templates WHERE deck_id = $1 AND field_type = 'number' ORDER BY field_name",
+            deck_id
+        )
     
     return templates.TemplateResponse("card_activities.html", {
         "request": request,
         "user": user,
+        "is_global_admin": is_global_admin(user['id']),
         "deck": dict(deck),
-        "activities": [dict(a) for a in activities]
+        "activities": [dict(a) for a in activities],
+        "number_template_fields": number_template_fields,
+        "active_section": "activities"
     })
+
+@app.post("/deck/{deck_id}/pvp-settings")
+async def update_pvp_settings(request: Request, deck_id: int, user = Depends(require_admin)):
+    """Save PvP configuration for a deck"""
+    form_data = await request.form()
+    pvp_enabled  = form_data.get('pvp_enabled')  == '1'
+    pvp_attribute = (form_data.get('pvp_attribute') or '').strip() or None
+    allow_no_stake = form_data.get('allow_no_stake') == '1'
+    vp_enabled   = form_data.get('vp_enabled')   == '1'
+
+    pool = await get_db_pool()
+    async with pool.acquire() as conn:
+        deck = await conn.fetchrow("SELECT created_by, disabled FROM decks WHERE deck_id = $1", deck_id)
+        if not deck:
+            raise HTTPException(status_code=404, detail="Deck not found")
+        if deck['created_by'] != user['id'] and not is_global_admin(user['id']):
+            raise HTTPException(status_code=403, detail="You don't own this deck")
+        if check_deck_disabled(deck, user['id']):
+            raise HTTPException(status_code=403, detail="This deck has been disabled")
+
+        await conn.execute(
+            """UPDATE decks
+               SET pvp_enabled = $1, pvp_attribute = $2,
+                   allow_no_stake = $3, vp_enabled = $4
+               WHERE deck_id = $5""",
+            pvp_enabled, pvp_attribute, allow_no_stake, vp_enabled, deck_id,
+        )
+    return RedirectResponse(url=f"/deck/{deck_id}/activities?pvp_saved=1", status_code=303)
+
 
 @app.get("/deck/{deck_id}/activity/new", response_class=HTMLResponse)
 async def new_card_activity(request: Request, deck_id: int, user = Depends(require_admin)):
@@ -1061,6 +1452,9 @@ async def new_card_activity(request: Request, deck_id: int, user = Depends(requi
         if deck['created_by'] != user['id'] and not is_global_admin(user['id']):
             raise HTTPException(status_code=403, detail="You don't own this deck")
         
+        if deck['disabled'] and not is_global_admin(user['id']):
+            return RedirectResponse(url=f"/deck/{deck_id}/view", status_code=303)
+        
         numeric_fields = await conn.fetch(
             """SELECT * FROM card_templates 
                WHERE deck_id = $1 AND field_type = 'number'
@@ -1071,10 +1465,12 @@ async def new_card_activity(request: Request, deck_id: int, user = Depends(requi
     return templates.TemplateResponse("edit_activity.html", {
         "request": request,
         "user": user,
+        "is_global_admin": is_global_admin(user['id']),
         "deck": dict(deck),
         "activity": None,
         "numeric_fields": [dict(f) for f in numeric_fields],
-        "rarity_scaling": None
+        "rarity_scaling": None,
+        "active_section": "activities"
     })
 
 @app.post("/deck/{deck_id}/activity/create")
@@ -1084,8 +1480,9 @@ async def create_card_activity(
     name: str = Form(...),
     activity_type: str = Form("mission"),
     description: str = Form(None),
-    requirement_field: str = Form(...),
-    min_value_base: float = Form(...),
+    require_card_attribute: Optional[str] = Form(None),
+    requirement_field: Optional[str] = Form(None),
+    min_value_base: float = Form(0.0),
     reward_base: int = Form(...),
     duration_base_hours: int = Form(48),
     variance_pct: float = Form(5.0),
@@ -1098,7 +1495,7 @@ async def create_card_activity(
     
     async with pool.acquire() as conn:
         deck = await conn.fetchrow(
-            "SELECT created_by FROM decks WHERE deck_id = $1",
+            "SELECT created_by, disabled FROM decks WHERE deck_id = $1",
             deck_id
         )
         
@@ -1108,15 +1505,25 @@ async def create_card_activity(
         if deck['created_by'] != user['id'] and not is_global_admin(user['id']):
             raise HTTPException(status_code=403, detail="You don't own this deck")
         
+        if check_deck_disabled(deck, user['id']):
+            raise HTTPException(status_code=403, detail="This deck has been disabled by an administrator")
+        
+        req_attr = require_card_attribute == '1'
+        if not req_attr:
+            requirement_field = None
+            min_value_base = 0.0
+
         async with conn.transaction():
             result = await conn.fetchrow(
                 """INSERT INTO mission_templates 
-                   (deck_id, name, activity_type, description, requirement_field, 
-                    min_value_base, reward_base, duration_base_hours, variance_pct, is_active, created_by)
-                   VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+                   (deck_id, name, activity_type, description, require_card_attribute,
+                    requirement_field, min_value_base, reward_base, duration_base_hours,
+                    variance_pct, is_active, created_by)
+                   VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
                    RETURNING mission_template_id""",
-                deck_id, name, activity_type, description, requirement_field,
-                min_value_base, reward_base, duration_base_hours, variance_pct, is_active, user['id']
+                deck_id, name, activity_type, description, req_attr,
+                requirement_field, min_value_base, reward_base, duration_base_hours,
+                variance_pct, is_active, user['id']
             )
             
             mission_template_id = result['mission_template_id']
@@ -1154,6 +1561,9 @@ async def edit_card_activity(request: Request, deck_id: int, mission_template_id
         if deck['created_by'] != user['id'] and not is_global_admin(user['id']):
             raise HTTPException(status_code=403, detail="You don't own this deck")
         
+        if deck['disabled'] and not is_global_admin(user['id']):
+            return RedirectResponse(url=f"/deck/{deck_id}/view", status_code=303)
+        
         activity = await conn.fetchrow(
             "SELECT * FROM mission_templates WHERE mission_template_id = $1 AND deck_id = $2",
             mission_template_id, deck_id
@@ -1178,10 +1588,12 @@ async def edit_card_activity(request: Request, deck_id: int, mission_template_id
     return templates.TemplateResponse("edit_activity.html", {
         "request": request,
         "user": user,
+        "is_global_admin": is_global_admin(user['id']),
         "deck": dict(deck),
         "activity": dict(activity),
         "numeric_fields": [dict(f) for f in numeric_fields],
-        "rarity_scaling": rarity_scaling
+        "rarity_scaling": rarity_scaling,
+        "active_section": "activities"
     })
 
 @app.post("/deck/{deck_id}/activity/{mission_template_id}/update")
@@ -1192,8 +1604,9 @@ async def update_card_activity(
     name: str = Form(...),
     activity_type: str = Form("mission"),
     description: str = Form(None),
-    requirement_field: str = Form(...),
-    min_value_base: float = Form(...),
+    require_card_attribute: Optional[str] = Form(None),
+    requirement_field: Optional[str] = Form(None),
+    min_value_base: float = Form(0.0),
     reward_base: int = Form(...),
     duration_base_hours: int = Form(48),
     variance_pct: float = Form(5.0),
@@ -1206,7 +1619,7 @@ async def update_card_activity(
     
     async with pool.acquire() as conn:
         deck = await conn.fetchrow(
-            "SELECT created_by FROM decks WHERE deck_id = $1",
+            "SELECT created_by, disabled FROM decks WHERE deck_id = $1",
             deck_id
         )
         
@@ -1216,6 +1629,9 @@ async def update_card_activity(
         if deck['created_by'] != user['id'] and not is_global_admin(user['id']):
             raise HTTPException(status_code=403, detail="You don't own this deck")
         
+        if check_deck_disabled(deck, user['id']):
+            raise HTTPException(status_code=403, detail="This deck has been disabled by an administrator")
+        
         activity = await conn.fetchrow(
             "SELECT * FROM mission_templates WHERE mission_template_id = $1 AND deck_id = $2",
             mission_template_id, deck_id
@@ -1224,14 +1640,20 @@ async def update_card_activity(
         if not activity:
             raise HTTPException(status_code=404, detail="Activity not found")
         
+        req_attr = require_card_attribute == '1'
+        if not req_attr:
+            requirement_field = None
+            min_value_base = 0.0
+
         async with conn.transaction():
             await conn.execute(
                 """UPDATE mission_templates 
-                   SET name = $1, activity_type = $2, description = $3, requirement_field = $4,
-                       min_value_base = $5, reward_base = $6, duration_base_hours = $7, 
-                       variance_pct = $8, is_active = $9, updated_at = NOW()
-                   WHERE mission_template_id = $10""",
-                name, activity_type, description, requirement_field,
+                   SET name = $1, activity_type = $2, description = $3,
+                       require_card_attribute = $4, requirement_field = $5,
+                       min_value_base = $6, reward_base = $7, duration_base_hours = $8, 
+                       variance_pct = $9, is_active = $10, updated_at = NOW()
+                   WHERE mission_template_id = $11""",
+                name, activity_type, description, req_attr, requirement_field,
                 min_value_base, reward_base, duration_base_hours, variance_pct, is_active,
                 mission_template_id
             )
@@ -1267,7 +1689,7 @@ async def delete_card_activity(
     
     async with pool.acquire() as conn:
         deck = await conn.fetchrow(
-            "SELECT created_by FROM decks WHERE deck_id = $1",
+            "SELECT created_by, disabled FROM decks WHERE deck_id = $1",
             deck_id
         )
         
@@ -1276,6 +1698,9 @@ async def delete_card_activity(
         
         if deck['created_by'] != user['id'] and not is_global_admin(user['id']):
             raise HTTPException(status_code=403, detail="You don't own this deck")
+        
+        if check_deck_disabled(deck, user['id']):
+            raise HTTPException(status_code=403, detail="This deck has been disabled by an administrator")
         
         await conn.execute(
             "DELETE FROM mission_templates WHERE mission_template_id = $1 AND deck_id = $2",
@@ -1302,6 +1727,9 @@ async def edit_card_form(request: Request, deck_id: int, card_id: int, user = De
         # Check permissions
         if deck['created_by'] != user['id'] and not is_global_admin(user['id']):
             raise HTTPException(status_code=403, detail="You don't own this deck")
+        
+        if deck['disabled'] and not is_global_admin(user['id']):
+            return RedirectResponse(url=f"/deck/{deck_id}/view", status_code=303)
         
         # Get card info
         card = await conn.fetchrow(
@@ -1334,10 +1762,12 @@ async def edit_card_form(request: Request, deck_id: int, card_id: int, user = De
     return templates.TemplateResponse("edit_card.html", {
         "request": request,
         "user": user,
+        "is_global_admin": is_global_admin(user['id']),
         "deck": dict(deck),
         "card": dict(card),
         "template_fields": template_fields,
-        "field_values": field_values
+        "field_values": field_values,
+        "active_section": "overview"
     })
 
 @app.post("/deck/{deck_id}/card/{card_id}/update")
@@ -1364,7 +1794,7 @@ async def update_card(
     async with pool.acquire() as conn:
         # Verify deck ownership
         deck = await conn.fetchrow(
-            "SELECT created_by FROM decks WHERE deck_id = $1",
+            "SELECT created_by, disabled FROM decks WHERE deck_id = $1",
             deck_id
         )
         
@@ -1373,6 +1803,9 @@ async def update_card(
         
         if deck['created_by'] != user['id'] and not is_global_admin(user['id']):
             raise HTTPException(status_code=403, detail="You don't own this deck")
+        
+        if check_deck_disabled(deck, user['id']):
+            raise HTTPException(status_code=403, detail="This deck has been disabled by an administrator")
         
         # Verify card belongs to this deck
         card = await conn.fetchrow(
@@ -1460,11 +1893,16 @@ async def edit_cooldown(request: Request, deck_id: int, user = Depends(require_a
         # Check permissions
         if deck['created_by'] != user['id'] and not is_global_admin(user['id']):
             raise HTTPException(status_code=403, detail="You don't own this deck")
+        
+        if deck['disabled'] and not is_global_admin(user['id']):
+            return RedirectResponse(url=f"/deck/{deck_id}/view", status_code=303)
     
     return templates.TemplateResponse("edit_cooldown.html", {
         "request": request,
         "user": user,
-        "deck": dict(deck)
+        "is_global_admin": is_global_admin(user['id']),
+        "deck": dict(deck),
+        "active_section": "cooldown"
     })
 
 @app.post("/deck/{deck_id}/cooldown/update")
@@ -1484,7 +1922,7 @@ async def update_cooldown(
     async with pool.acquire() as conn:
         # Verify deck ownership
         deck = await conn.fetchrow(
-            "SELECT created_by FROM decks WHERE deck_id = $1",
+            "SELECT created_by, disabled FROM decks WHERE deck_id = $1",
             deck_id
         )
         
@@ -1493,6 +1931,9 @@ async def update_cooldown(
         
         if deck['created_by'] != user['id'] and not is_global_admin(user['id']):
             raise HTTPException(status_code=403, detail="You don't own this deck")
+        
+        if check_deck_disabled(deck, user['id']):
+            raise HTTPException(status_code=403, detail="This deck has been disabled by an administrator")
         
         # Update cooldown
         await conn.execute(
@@ -1521,6 +1962,9 @@ async def edit_rarity_rates(request: Request, deck_id: int, user = Depends(requi
         if deck['created_by'] != user['id'] and not is_global_admin(user['id']):
             raise HTTPException(status_code=403, detail="You don't own this deck")
         
+        if deck['disabled'] and not is_global_admin(user['id']):
+            return RedirectResponse(url=f"/deck/{deck_id}/view", status_code=303)
+        
         # Get rarity rates
         rates = await conn.fetch(
             "SELECT * FROM rarity_ranges WHERE deck_id = $1 ORDER BY rarity",
@@ -1530,8 +1974,10 @@ async def edit_rarity_rates(request: Request, deck_id: int, user = Depends(requi
     return templates.TemplateResponse("edit_rarity.html", {
         "request": request,
         "user": user,
+        "is_global_admin": is_global_admin(user['id']),
         "deck": dict(deck),
-        "rates": [dict(r) for r in rates]
+        "rates": [dict(r) for r in rates],
+        "active_section": "rarity"
     })
 
 @app.post("/deck/{deck_id}/rarity/update")
@@ -1562,7 +2008,7 @@ async def update_rarity_rates(
     async with pool.acquire() as conn:
         # Verify deck ownership
         deck = await conn.fetchrow(
-            "SELECT created_by FROM decks WHERE deck_id = $1",
+            "SELECT created_by, disabled FROM decks WHERE deck_id = $1",
             deck_id
         )
         
@@ -1571,6 +2017,9 @@ async def update_rarity_rates(
         
         if deck['created_by'] != user['id'] and not is_global_admin(user['id']):
             raise HTTPException(status_code=403, detail="You don't own this deck")
+        
+        if check_deck_disabled(deck, user['id']):
+            raise HTTPException(status_code=403, detail="This deck has been disabled by an administrator")
         
         # Update rates
         async with conn.transaction():
@@ -1585,11 +2034,127 @@ async def update_rarity_rates(
     
     return RedirectResponse(url=f"/deck/{deck_id}/rarity?success=1", status_code=303)
 
+async def require_global_admin(request: Request):
+    """Dependency to require global admin access"""
+    user = await get_current_user(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    if not is_global_admin(user['id']):
+        raise HTTPException(status_code=403, detail="Admin access required")
+    return user
+
+@app.get("/admin", response_class=HTMLResponse)
+async def admin_page(request: Request, user = Depends(require_global_admin)):
+    """Administration landing page"""
+    return templates.TemplateResponse("admin.html", {
+        "request": request,
+        "user": user,
+        "is_global_admin": True
+    })
+
+@app.get("/admin/decks", response_class=HTMLResponse)
+async def admin_deck_list(request: Request, user = Depends(require_global_admin)):
+    """Admin deck list showing all decks"""
+    pool = await get_db_pool()
+    
+    success = request.query_params.get('success')
+    error = request.query_params.get('error')
+    
+    async with pool.acquire() as conn:
+        decks = await conn.fetch(
+            "SELECT * FROM decks ORDER BY created_at DESC"
+        )
+    
+    return templates.TemplateResponse("admin_decks.html", {
+        "request": request,
+        "user": user,
+        "is_global_admin": True,
+        "decks": [dict(d) for d in decks],
+        "success": success,
+        "error": error
+    })
+
+@app.post("/admin/deck/{deck_id}/disable")
+async def admin_disable_deck(request: Request, deck_id: int, user = Depends(require_global_admin)):
+    """Disable a deck - removes from all servers and locks to view-only"""
+    pool = await get_db_pool()
+    
+    async with pool.acquire() as conn:
+        deck = await conn.fetchrow("SELECT * FROM decks WHERE deck_id = $1", deck_id)
+        if not deck:
+            return RedirectResponse(url="/admin/decks?error=Deck+not+found", status_code=303)
+        
+        if deck['disabled']:
+            return RedirectResponse(url="/admin/decks?error=Deck+is+already+disabled", status_code=303)
+        
+        async with conn.transaction():
+            await conn.execute(
+                "DELETE FROM server_decks WHERE deck_id = $1",
+                deck_id
+            )
+            
+            await conn.execute(
+                "UPDATE decks SET disabled = TRUE, disabled_at = NOW(), disabled_by = $1 WHERE deck_id = $2",
+                user['id'], deck_id
+            )
+            
+            await conn.execute(
+                """INSERT INTO admin_audit_log (action, deck_id, deck_name, performed_by, performed_by_username)
+                   VALUES ($1, $2, $3, $4, $5)""",
+                'Disable', deck_id, deck['name'], user['id'], user['username']
+            )
+    
+    return RedirectResponse(url=f"/admin/decks?success=Deck+'{deck['name']}'+has+been+disabled", status_code=303)
+
+@app.post("/admin/deck/{deck_id}/enable")
+async def admin_enable_deck(request: Request, deck_id: int, user = Depends(require_global_admin)):
+    """Enable a previously disabled deck"""
+    pool = await get_db_pool()
+    
+    async with pool.acquire() as conn:
+        deck = await conn.fetchrow("SELECT * FROM decks WHERE deck_id = $1", deck_id)
+        if not deck:
+            return RedirectResponse(url="/admin/decks?error=Deck+not+found", status_code=303)
+        
+        if not deck['disabled']:
+            return RedirectResponse(url="/admin/decks?error=Deck+is+already+active", status_code=303)
+        
+        async with conn.transaction():
+            await conn.execute(
+                "UPDATE decks SET disabled = FALSE, disabled_at = NULL, disabled_by = NULL WHERE deck_id = $1",
+                deck_id
+            )
+            
+            await conn.execute(
+                """INSERT INTO admin_audit_log (action, deck_id, deck_name, performed_by, performed_by_username)
+                   VALUES ($1, $2, $3, $4, $5)""",
+                'Enable', deck_id, deck['name'], user['id'], user['username']
+            )
+    
+    return RedirectResponse(url=f"/admin/decks?success=Deck+'{deck['name']}'+has+been+enabled", status_code=303)
+
+@app.get("/admin/audit-log", response_class=HTMLResponse)
+async def admin_audit_log(request: Request, user = Depends(require_global_admin)):
+    """View audit log of admin actions"""
+    pool = await get_db_pool()
+    
+    async with pool.acquire() as conn:
+        entries = await conn.fetch(
+            "SELECT * FROM admin_audit_log ORDER BY created_at DESC"
+        )
+    
+    return templates.TemplateResponse("admin_audit_log.html", {
+        "request": request,
+        "user": user,
+        "is_global_admin": True,
+        "entries": [dict(e) for e in entries]
+    })
+
 # Health check endpoint
 @app.get("/health")
 async def health():
     """Health check endpoint"""
-    return {"status": "ok", "service": "DeckForge Admin Portal"}
+    return {"status": "ok", "service": "Deck Foundry Web Portal"}
 
 import uvicorn
 

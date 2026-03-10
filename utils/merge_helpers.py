@@ -1,5 +1,5 @@
 """
-DeckForge Merge System Helpers
+Deck Foundry Merge System Helpers
 Functions for card merging, perk progression, and cost calculation
 """
 from typing import Optional, Dict, List

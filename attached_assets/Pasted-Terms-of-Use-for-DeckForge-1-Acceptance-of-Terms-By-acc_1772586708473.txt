@@ -1,0 +1,48 @@
+Terms of Use for DeckForge
+1. Acceptance of Terms
+By accessing or using DeckForge, you agree to be bound by these Terms of Use, our Privacy Policy, and any additional guidelines posted within the platform. If you do not agree, you may not use DeckForge.
+2. Description of the Service
+DeckForge is a platform that allows users to create, manage, and share digital card decks. Users may keep decks private or submit them to the public marketplace, where they become discoverable by others. DeckForge may also integrate with Discord or other third‑party services to enhance gameplay and community features.
+3. User Accounts
+You are responsible for maintaining the confidentiality of your account credentials and for all activity that occurs under your account. DeckForge reserves the right to suspend or terminate accounts that violate these Terms.
+4. User-Generated Content
+You retain ownership of the content you create. By uploading or submitting content to DeckForge, you grant DeckForge a worldwide, non-exclusive, royalty-free license to host, display, and distribute your content within the platform.
+Content submitted to the public marketplace must comply with all content rules, including restrictions on illegal, hateful, or explicit material. DeckForge may review, filter, or remove content that violates these rules or applicable law.
+5. Marketplace Content Rules
+When submitting a deck to the public marketplace, you agree that:
+- Content must not contain illegal, hateful, harassing, or violent material.
+- Explicit or adult content is not permitted in the public marketplace.
+- Decks containing adult themes may be created privately but cannot be listed publicly.
+- DeckForge may apply automated or manual review to ensure compliance.
+- DeckForge may remove or restrict content at its discretion.
+6. Prohibited Conduct
+Users may not:
+- Use DeckForge for unlawful purposes.
+- Attempt to exploit, reverse-engineer, or disrupt the platform.
+- Upload malware, spam, or harmful code.
+- Impersonate others or misrepresent affiliation.
+- Harass, threaten, or abuse other users.
+7. Intellectual Property
+All DeckForge branding, interface elements, and platform features are the property of DeckForge. You may not copy, modify, or redistribute platform assets without permission.
+8. Third-Party Integrations
+DeckForge may integrate with Discord or other services. Your use of those services is governed by their respective terms. DeckForge is not responsible for third‑party service outages, changes, or data handling.
+9. Termination
+DeckForge may suspend or terminate access to the platform at any time for violations of these Terms or for operational reasons. You may delete your account at any time.
+10. Disclaimer of Warranties
+DeckForge is provided “as is” without warranties of any kind. We do not guarantee uninterrupted service, error-free operation, or the accuracy of user-generated content.
+11. Limitation of Liability
+To the fullest extent permitted by law, DeckForge is not liable for any damages arising from your use of the platform, including loss of data, loss of revenue, or exposure to user-generated content.
+12. Changes to Terms
+DeckForge may update these Terms from time to time. Continued use of the platform after changes take effect constitutes acceptance of the updated Terms.
+13. Contact
+For questions about these Terms, you may contact the DeckForge team through the official website or support channels.
+
+Where to Put the Terms of Use
+For a platform like DeckForge, the best placement is:
+- Footer link on every page — “Terms of Use” or “Terms”.
+- Dedicated /terms route — clean, easy to link, easy to update.
+- Required acceptance during account creation — a checkbox linking to the Terms.
+- Optional reminder when submitting a deck to the public marketplace — “By submitting, you agree to the Terms of Use.”
+This keeps you covered legally and ensures users can always find the rules.
+
+If you want, I can also generate a Privacy Policy, Marketplace Rules page, or a shorter “Community Guidelines” version that’s more user-friendly.

@@ -1,5 +1,5 @@
 """
-DeckForge Future Features Cog
+Deck Foundry Future Features Cog
 Placeholder commands for Phase 2+ features
 """
 import discord

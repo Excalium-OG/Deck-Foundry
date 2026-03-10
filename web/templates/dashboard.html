@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Dashboard - DeckForge Admin{% endblock %}
+{% block title %}Dashboard - Deck Foundry{% endblock %}
 
 {% block content %}
 <style>
@@ -17,11 +17,18 @@
     align-items: center;
     margin-bottom: 2rem;
     gap: 1rem;
+    flex-wrap: wrap;
   }
 
   .dashboard-header h2 {
     font-size: 2rem;
     margin: 0;
+  }
+
+  .header-buttons {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
   }
 
   .section {
@@ -225,27 +232,30 @@
 <div class="dashboard">
     <div class="dashboard-header">
         <h2>Dashboard</h2>
-        <a href="/marketplace" class="btn btn-primary">Deck Marketplace</a>
-        <a href="/deck/create" class="btn btn-primary">+ Create New Deck</a>
+        <div class="header-buttons">
+            <a href="/marketplace" class="btn btn-primary">Deck Marketplace</a>
+            <a href="/deck/create" class="btn btn-primary">+ Create New Deck</a>
+        </div>
     </div>
-    
-    {% if is_global_admin %}
-    <div class="alert alert-info">
-        <strong>🛡️ Global Admin</strong> - You have full access to all decks and servers
-    </div>
-    {% endif %}
 
     <div class="section">
-        <h3>📋 Your Decks</h3>
+        <h3>Your Decks</h3>
         {% if decks %}
         <div class="deck-grid">
             {% for deck in decks %}
             <div class="deck-card">
                 <h4>{{ deck.name }}</h4>
                 <p class="deck-meta">Created: {{ deck.created_at.strftime('%Y-%m-%d') if deck.created_at else 'Unknown' }}</p>
+                {% if deck.get('disabled') %}
+                <p style="color: #ef4444; font-weight: 600; font-size: 0.85rem; margin-bottom: 0.5rem;">Disabled by admin - View only</p>
+                {% endif %}
                 <div class="deck-actions">
+                    {% if deck.get('disabled') %}
+                    <a href="/deck/{{ deck.deck_id }}/view" class="btn btn-sm btn-secondary">View Cards</a>
+                    {% else %}
                     <a href="/deck/{{ deck.deck_id }}/edit" class="btn btn-sm btn-secondary">Edit Cards</a>
                     <a href="/deck/{{ deck.deck_id }}/rarity" class="btn btn-sm btn-secondary">Edit Rates</a>
+                    {% endif %}
                 </div>
             </div>
             {% endfor %}
@@ -257,7 +267,7 @@
 
     {% if adopted_decks %}
     <div class="section">
-        <h3>📥 Adopted Decks</h3>
+        <h3>Adopted Decks</h3>
         <p style="color: #6b7280; margin-bottom: 1rem; font-size: 0.9rem;">
             These decks were adopted from the marketplace. Only the original creator can edit them.
         </p>
@@ -266,11 +276,11 @@
             <div class="deck-card" style="border-color: #a5b4fc;">
                 <h4>{{ deck.name }}</h4>
                 <p class="deck-meta">
-                    <span style="color: #667eea; font-weight: 600;">📥 Adopted</span>
-                    • Created by: {{ deck.created_by }}
+                    <span style="color: #667eea; font-weight: 600;">Adopted</span>
+                    | Created by: {{ deck.created_by }}
                 </p>
                 <div class="deck-actions">
-                    <a href="/deck/{{ deck.deck_id }}/view" class="btn btn-sm btn-secondary">👁 View Cards</a>
+                    <a href="/deck/{{ deck.deck_id }}/view" class="btn btn-sm btn-secondary">View Cards</a>
                 </div>
             </div>
             {% endfor %}
@@ -279,7 +289,7 @@
     {% endif %}
 
     <div class="section">
-        <h3>🎮 Your Discord Servers</h3>
+        <h3>Your Discord Servers</h3>
         {% if guilds %}
         <div class="server-list">
             {% for guild in guilds %}

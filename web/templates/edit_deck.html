@@ -1,119 +1,62 @@
-{% extends "base.html" %}
+{% extends "deck_base.html" %}
 
 {% block title %}Edit Deck - {{ deck.name }}{% endblock %}
+{% block page_title %}Overview &amp; Cards{% endblock %}
 
-{% block content %}
+{% block deck_content %}
 <style>
-  .edit-deck-container {
+  .marketplace-panel {
     background: white;
-    border-radius: 12px;
-    padding: 2rem;
-    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-  }
-
-  .deck-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 2rem;
-  }
-
-  .deck-header h2 {
-    margin: 0;
-  }
-
-  .header-actions {
-    display: flex;
-    gap: 0.5rem;
-  }
-
-  .section {
-    margin: 2rem 0;
-  }
-
-  .section h3 {
-    margin-bottom: 1rem;
-    color: #374151;
-  }
-
-  .form-group {
+    border: 1px solid #e5e7eb;
+    border-radius: 10px;
+    padding: 1.5rem;
     margin-bottom: 1.5rem;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06);
   }
-
-  .form-group label {
-    display: block;
-    margin-bottom: 0.5rem;
-    font-weight: 600;
+  .marketplace-panel h3 {
+    margin: 0 0 1rem;
     color: #374151;
+    font-size: 1.05rem;
   }
-
-  .form-group input,
-  .form-group textarea,
-  .form-group select {
-    width: 100%;
-    padding: 0.75rem;
-    border: 2px solid #d1d5db;
-    border-radius: 8px;
-    font-size: 1rem;
-    font-family: inherit;
+  .cards-panel {
+    background: white;
+    border-radius: 10px;
+    padding: 1.5rem;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    border: 1px solid #e5e7eb;
   }
-
-  .form-group input:focus,
-  .form-group textarea:focus,
-  .form-group select:focus {
-    outline: none;
-    border-color: #667eea;
+  .cards-panel h3 {
+    margin: 0 0 1rem;
+    color: #374151;
+    font-size: 1.05rem;
   }
-
-  .form-group small {
-    display: block;
-    margin-top: 0.25rem;
-    color: #6b7280;
-    font-size: 0.875rem;
-  }
-
-  .form-row {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-    gap: 1rem;
-  }
-
-  .form-actions {
-    display: flex;
-    gap: 1rem;
-    margin-top: 2rem;
-  }
-
   .cards-list {
     display: flex;
     flex-direction: column;
-    gap: 1rem;
-    margin-top: 1rem;
+    gap: 0.75rem;
   }
-
   .card-item {
     background: #f9fafb;
     border: 2px solid #e5e7eb;
     border-radius: 8px;
-    padding: 1rem;
+    padding: 0.9rem 1rem;
     display: flex;
     justify-content: space-between;
     align-items: center;
   }
-
   .card-preview {
     display: flex;
-    gap: 1rem;
+    gap: 0.85rem;
     flex: 1;
+    align-items: center;
   }
-
   .card-thumbnail {
     width: 40px;
     height: 40px;
     object-fit: cover;
     border-radius: 6px;
+    flex-shrink: 0;
   }
-
   .card-thumbnail-placeholder {
     width: 40px;
     height: 40px;
@@ -123,355 +66,234 @@
     background: #e5e7eb;
     border-radius: 6px;
     font-size: 1.25rem;
+    flex-shrink: 0;
   }
-
   .card-rarity-badge {
     display: inline-block;
-    padding: 0.25rem 0.5rem;
+    padding: 0.2rem 0.5rem;
     background: #667eea;
     color: white;
     border-radius: 4px;
-    font-size: 0.75rem;
-    font-weight: normal;
-    margin-left: 0.5rem;
+    font-size: 0.72rem;
+    font-weight: 600;
+    margin-left: 0.4rem;
   }
-
+  .card-details h4 {
+    margin: 0 0 0.2rem;
+    font-size: 0.95rem;
+  }
+  .card-description {
+    margin: 0;
+    font-size: 0.82rem;
+    color: #6b7280;
+  }
   .card-actions {
     display: flex;
     gap: 0.5rem;
+    flex-shrink: 0;
   }
-
-  .merge-perks-list {
+  .add-card-cta {
     display: flex;
-    flex-direction: column;
-    gap: 1rem;
-    margin-top: 1rem;
-  }
-
-  .perk-item {
-    background: #f9fafb;
-    border: 2px solid #e5e7eb;
-    border-radius: 8px;
-    padding: 1rem;
-    display: flex;
-    justify-content: space-between;
     align-items: center;
+    justify-content: space-between;
+    margin-bottom: 1rem;
   }
-
-  .perk-info h5 {
-    margin: 0 0 0.5rem 0;
-  }
-
-  .perk-stats {
+  .cards-toolbar {
     display: flex;
-    gap: 2rem;
-    font-size: 0.9rem;
-    color: #6b7280;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+    flex-wrap: wrap;
   }
-
-  .btn {
+  .cards-toolbar label {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: #374151;
+    white-space: nowrap;
+  }
+  .cards-toolbar select {
+    padding: 0.4rem 0.7rem;
+    border: 2px solid #d1d5db;
+    border-radius: 6px;
+    font-size: 0.875rem;
+    font-family: inherit;
+    background: white;
+    cursor: pointer;
+  }
+  .cards-toolbar select:focus {
+    outline: none;
+    border-color: #667eea;
+  }
+  .issue-badge {
     display: inline-flex;
     align-items: center;
-    gap: 0.5rem;
-    padding: 0.75rem 1.5rem;
-    border-radius: 8px;
-    text-decoration: none;
-    font-weight: 600;
-    border: 2px solid transparent;
-    cursor: pointer;
-    font-size: 1rem;
-  }
-
-  .btn-primary {
-    background: #667eea;
-    color: white;
-    border-color: #5568d3;
-  }
-
-  .btn-secondary {
-    background: white;
-    color: #374151;
-    border-color: #d1d5db;
-  }
-
-  .btn-danger {
+    justify-content: center;
+    width: 1.25rem;
+    height: 1.25rem;
     background: #ef4444;
     color: white;
-    border-color: #dc2626;
+    border-radius: 50%;
+    font-size: 0.7rem;
+    font-weight: 900;
+    margin-left: 0.35rem;
+    cursor: default;
+    flex-shrink: 0;
+    position: relative;
   }
-
-  .btn-sm {
-    padding: 0.5rem 1rem;
-    font-size: 0.875rem;
-  }
-
-  .info-box {
-    background: #f0f9ff;
-    border-left: 4px solid #3b82f6;
-    padding: 1rem;
-    margin: 1rem 0;
+  .issue-badge::after {
+    content: attr(data-tooltip);
+    position: absolute;
+    bottom: calc(100% + 5px);
+    left: 50%;
+    transform: translateX(-50%);
+    background: #1f2937;
+    color: white;
+    font-size: 0.72rem;
+    font-weight: 500;
+    padding: 0.25rem 0.55rem;
     border-radius: 4px;
-    font-size: 0.9rem;
+    white-space: nowrap;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.15s;
+    z-index: 10;
   }
-
-  .empty-state {
-    text-align: center;
-    color: #6b7280;
-    padding: 3rem;
-    font-style: italic;
+  .issue-badge:hover::after {
+    opacity: 1;
+  }
+  .issue-count-badge {
+    background: #fef2f2;
+    color: #dc2626;
+    border: 1px solid #fecaca;
+    border-radius: 9999px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    padding: 0.15rem 0.6rem;
   }
 </style>
 
-<div class="edit-deck-container">
-    <div class="deck-header">
-        <h2>{{ deck.name }}</h2>
-        <div class="header-actions">
-            <a href="/deck/{{ deck.deck_id }}/activities" class="btn btn-primary">Card Activities</a>
-            <a href="/deck/{{ deck.deck_id }}/cooldown" class="btn btn-secondary">Edit Cooldown</a>
-            <a href="/deck/{{ deck.deck_id }}/rarity" class="btn btn-secondary">Edit Drop Rates</a>
-            <a href="/dashboard" class="btn btn-secondary">Back to Dashboard</a>
-        </div>
-    </div>
-
-<!-- Public Marketplace toggle (insert near deck settings) -->
-<section id="public-settings" style="margin-top:1.25rem; padding:0.75rem; border:1px solid #eee; border-radius:6px;">
+<div class="marketplace-panel">
   <h3>Marketplace Settings</h3>
   <form action="/deck/{{ deck.deck_id }}/set-public" method="post">
-    <div style="display:flex;gap:1rem;align-items:center;">
-      <label style="display:flex;align-items:center;gap:.5rem;">
-        <input type="checkbox" name="is_public" value="1" {% if deck.get('is_public') %}checked{% endif %}>
+    <div style="display:flex;gap:1rem;align-items:center;margin-bottom:0.75rem;">
+      <label style="display:flex;align-items:center;gap:0.5rem;cursor:pointer;">
+        <input type="checkbox" name="is_public" value="1"
+               {% if deck.get('is_public') %}checked{% endif %}>
         Make this deck public in the Marketplace
       </label>
     </div>
-
-    <div style="margin-top:.5rem;">
-      <label for="public_description">Public description (shown in Marketplace)</label><br>
-      <textarea id="public_description" name="public_description" rows="3" style="width:100%;">{{ deck.get('public_description') or '' }}</textarea>
+    <div style="margin-bottom:0.75rem;">
+      <label for="public_description" style="display:block;font-weight:600;margin-bottom:0.35rem;color:#374151;">
+        Public description
+      </label>
+      <textarea id="public_description" name="public_description" rows="2"
+                style="width:100%;padding:0.6rem;border:2px solid #d1d5db;border-radius:6px;font-family:inherit;font-size:0.95rem;box-sizing:border-box;">{{ deck.get('public_description') or '' }}</textarea>
     </div>
-
-    <div style="margin-top:.75rem;">
-      <button type="submit">Save Marketplace Settings</button>
-      <span style="margin-left:1rem;color:#666;font-size:.9rem;">Only the deck owner or global admins can make a deck public.</span>
+    <div style="display:flex;align-items:center;gap:1rem;">
+      <button type="submit" class="df-btn df-btn-primary df-btn-sm">Save Marketplace Settings</button>
+      <span style="color:#6b7280;font-size:0.85rem;">Only the deck owner or global admins can make a deck public.</span>
     </div>
   </form>
-</section>
-    
-    <div class="section">
-        <h3>Add New Card</h3>
-        <form method="POST" action="/deck/{{ deck.deck_id }}/card/add" class="card-form">
-            <div class="form-row">
-                <div class="form-group">
-                    <label for="name">Card Name *</label>
-                    <input type="text" id="name" name="name" required placeholder="e.g., Falcon 9">
-                </div>
-                
-                <div class="form-group">
-                    <label for="rarity">Rarity *</label>
-                    <select id="rarity" name="rarity" required>
-                        <option value="Common">Common</option>
-                        <option value="Uncommon">Uncommon</option>
-                        <option value="Exceptional">Exceptional</option>
-                        <option value="Rare">Rare</option>
-                        <option value="Epic">Epic</option>
-                        <option value="Legendary">Legendary</option>
-                        <option value="Mythic">Mythic</option>
-                    </select>
-                </div>
-            </div>
-            
-            <div class="form-group">
-                <label for="description">Description *</label>
-                <textarea id="description" name="description" required rows="3" 
-                          placeholder="Brief description of the card"></textarea>
-            </div>
-            
-            {% if template_fields %}
-            <!-- Dynamic template fields -->
-            <h4>Card Details</h4>
-            <div class="form-row">
-                {% for field in template_fields %}
-                <div class="form-group">
-                    <label for="field_{{ field.template_id }}">
-                        {{ field.field_name }}
-                        {% if field.is_required %}*{% endif %}
-                    </label>
-                    
-                    {% if field.field_type == 'text' %}
-                        <input type="text" 
-                               id="field_{{ field.template_id }}" 
-                               name="template_field_{{ field.template_id }}"
-                               {% if field.is_required %}required{% endif %}>
-                    {% elif field.field_type == 'number' %}
-                        <input type="number" 
-                               id="field_{{ field.template_id }}" 
-                               name="template_field_{{ field.template_id }}"
-                               {% if field.is_required %}required{% endif %}>
-                    {% elif field.field_type == 'dropdown' %}
-                        <select id="field_{{ field.template_id }}" 
-                                name="template_field_{{ field.template_id }}"
-                                {% if field.is_required %}required{% endif %}>
-                            <option value="">Select...</option>
-                            {% for option in field.dropdown_options.split(',') if field.dropdown_options %}
-                            <option value="{{ option.strip() }}">{{ option.strip() }}</option>
-                            {% endfor %}
-                        </select>
-                    {% endif %}
-                </div>
-                {% endfor %}
-            </div>
-            {% endif %}
-            
-            <div class="form-group">
-                <label for="image_url">Card Image URL</label>
-                <input type="url" id="image_url" name="image_url" placeholder="https://example.com/image.png or Discord attachment URL">
-                <small>Paste an image URL from Discord, Imgur, or any other source</small>
-                <div id="image-preview" style="margin-top: 10px;"></div>
-            </div>
-            
-            <h4>Merge Configuration</h4>
-            <div class="form-row">
-                <div class="form-group">
-                    <label style="display: flex; align-items: center; gap: 0.5rem;">
-                        <input type="checkbox" id="mergeable" name="mergeable" value="1">
-                        <span>Mergeable Card</span>
-                    </label>
-                    <small>Allow this card to be merged for progressive upgrades</small>
-                </div>
-                
-                <div class="form-group">
-                    <label for="max_merge_level">Max Merge Level</label>
-                    <input type="number" id="max_merge_level" name="max_merge_level" 
-                           value="10" min="1" max="100" placeholder="10">
-                    <small>Maximum level this card can be merged to (default: 10)</small>
-                </div>
-            </div>
-            
-            <button type="submit" class="btn btn-primary">Add Card</button>
-        </form>
-    </div>
-    
-    <script>
-    // Image preview functionality
-    const imageUrlInput = document.getElementById('image_url');
-    const imagePreview = document.getElementById('image-preview');
-    
-    imageUrlInput.addEventListener('input', (e) => {
-        const url = e.target.value.trim();
-        if (url && (url.startsWith('http://') || url.startsWith('https://'))) {
-            imagePreview.innerHTML = `<img src="${url}" alt="Preview" style="max-width: 200px; max-height: 200px; border-radius: 4px;" onerror="this.style.display='none'">`;
-        } else {
-            imagePreview.innerHTML = '';
-        }
-    });
-    </script>
-    
-    <div class="section">
-        <h3>Merge Perks Configuration</h3>
-        <p class="info-text">Configure progressive upgrade perks that players can select when merging cards. Perks apply percentage boosts to number-based card attributes with diminishing returns at higher merge levels.</p>
-        
-        {% if number_template_fields %}
-        <form method="POST" action="/deck/{{ deck.deck_id }}/merge_perk/add" class="card-form">
-            <h4>Add New Merge Perk</h4>
-            <div class="form-row">
-                <div class="form-group">
-                    <label for="perk_name">Attribute to Boost *</label>
-                    <select id="perk_name" name="perk_name" required>
-                        <option value="">Select an attribute...</option>
-                        {% for field in number_template_fields %}
-                        <option value="{{ field.field_name }}">{{ field.field_name }}</option>
-                        {% endfor %}
-                    </select>
-                    <small>Choose a number-based attribute that this perk will enhance</small>
-                </div>
-                
-                <div class="form-group">
-                    <label for="base_boost">Base Boost (%) *</label>
-                    <input type="number" id="base_boost" name="base_boost" required 
-                           min="0.1" max="100" step="0.1" placeholder="10.0">
-                    <small>Percentage boost at merge level 1 (e.g., 10 = +10%)</small>
-                </div>
-            </div>
-            
-            <div class="info-box">
-                <strong>How it works:</strong> At level 1, the perk applies +base%. At higher levels, the boost diminishes by 15% per level (factor: 0.85). 
-                <br>Example: 10% base → Level 1: +10%, Level 2: +8.5%, Level 3: +7.2%, etc.
-            </div>
-            
-            <button type="submit" class="btn btn-primary">Add Merge Perk</button>
-        </form>
-        {% else %}
-        <p class="empty-state">⚠️ No number-based template fields defined. Add numeric attributes (like "Attack", "Defense", "Speed") in your card template to enable merge perks.</p>
-        {% endif %}
-        
-        {% if merge_perks %}
-        <h4 style="margin-top: 2rem;">Current Merge Perks ({{ merge_perks|length }})</h4>
-        <div class="merge-perks-list">
-            {% for perk in merge_perks %}
-            <div class="perk-item">
-                <div class="perk-info">
-                    <h5>{{ perk.perk_name }}</h5>
-                    <div class="perk-stats">
-                        <span class="perk-stat">Base Boost: <strong>+{{ perk.base_boost }}%</strong></span>
-                        <span class="perk-stat">Diminishing Factor: <strong>{{ perk.diminishing_factor }}</strong></span>
-                    </div>
-                    <div class="perk-preview">
-                        <small>Level progression: 
-                            L1: +{{ "%.1f"|format(perk.base_boost) }}%, 
-                            L2: +{{ "%.1f"|format(perk.base_boost * perk.diminishing_factor) }}%, 
-                            L3: +{{ "%.1f"|format(perk.base_boost * (perk.diminishing_factor ** 2)) }}%, 
-                            L4: +{{ "%.1f"|format(perk.base_boost * (perk.diminishing_factor ** 3)) }}%, 
-                            L5: +{{ "%.1f"|format(perk.base_boost * (perk.diminishing_factor ** 4)) }}%
-                        </small>
-                    </div>
-                </div>
-                <form method="POST" action="/deck/{{ deck.deck_id }}/merge_perk/{{ perk.perk_name }}/delete" 
-                      onsubmit="return confirm('Delete merge perk \'{{ perk.perk_name }}\'? This will not affect existing merged cards.');" 
-                      style="display: inline;">
-                    <button type="submit" class="btn btn-sm btn-danger">Delete</button>
-                </form>
-            </div>
-            {% endfor %}
-        </div>
-        {% endif %}
-    </div>
-    
-    <div class="section">
-        <h3>Cards in Deck ({{ cards|length }})</h3>
-        {% if cards %}
-        <div class="cards-list">
-            {% for card in cards %}
-            <div class="card-item">
-                <div class="card-preview">
-                    {% if card.image_url %}
-                    <img src="{{ card.image_url }}" alt="{{ card.name }}" class="card-thumbnail">
-                    {% else %}
-                    <div class="card-thumbnail-placeholder">🚀</div>
-                    {% endif %}
-                    <div class="card-details">
-                        <h4>{{ card.name }} <span class="card-rarity-badge">{{ card.rarity }}</span></h4>
-                        <p class="card-description">{{ card.description[:100] }}{% if card.description|length > 100 %}...{% endif %}</p>
-                        {% if card.height or card.diameter or card.thrust %}
-                        <div class="card-specs">
-                            {% if card.height %}<span>H: {{ card.height }}</span>{% endif %}
-                            {% if card.diameter %}<span>D: {{ card.diameter }}</span>{% endif %}
-                            {% if card.thrust %}<span>T: {{ card.thrust }}</span>{% endif %}
-                        </div>
-                        {% endif %}
-                    </div>
-                </div>
-                <div class="card-actions">
-                    <a href="/deck/{{ deck.deck_id }}/card/{{ card.card_id }}/edit" class="btn btn-sm btn-secondary">Edit</a>
-                    <form method="POST" action="/deck/{{ deck.deck_id }}/card/{{ card.card_id }}/delete" 
-                          onsubmit="return confirm('Delete {{ card.name }}?');" style="display: inline;">
-                        <button type="submit" class="btn btn-sm btn-danger">Delete</button>
-                    </form>
-                </div>
-            </div>
-            {% endfor %}
-        </div>
-        {% else %}
-        <p class="empty-state">No cards in this deck yet. Add your first card above!</p>
-        {% endif %}
-    </div>
 </div>
+
+<div class="cards-panel">
+  <div class="add-card-cta">
+    <h3 style="margin:0;">
+      Cards in Deck ({{ cards|length }})
+      {% set issue_count = cards | selectattr('has_issues') | list | length %}
+      {% if issue_count > 0 %}
+      <span class="issue-count-badge" style="margin-left:0.5rem;">{{ issue_count }} issue{{ 's' if issue_count != 1 }}</span>
+      {% endif %}
+    </h3>
+    <a href="/deck/{{ deck.deck_id }}/card/new" class="df-btn df-btn-primary df-btn-sm">Add New Card</a>
+  </div>
+
+  {% if cards %}
+  <div class="cards-toolbar">
+    <label for="card-sort">Sort by:</label>
+    <select id="card-sort" onchange="sortCards(this.value)">
+      <option value="rarity-desc">Rarity (Highest first)</option>
+      <option value="rarity-asc">Rarity (Lowest first)</option>
+      <option value="name-asc">Alphabetically (A → Z)</option>
+      <option value="name-desc">Alphabetically (Z → A)</option>
+      <option value="issues">Issues first</option>
+    </select>
+  </div>
+
+  <div class="cards-list" id="cards-list">
+    {% for card in cards %}
+    <div class="card-item"
+         data-name="{{ card.name | lower }}"
+         data-rarity="{{ card.rarity }}"
+         data-has-issues="{{ 'true' if card.has_issues else 'false' }}">
+      <div class="card-preview">
+        {% if card.image_url %}
+        <img src="{{ card.image_url }}" alt="{{ card.name }}" class="card-thumbnail">
+        {% else %}
+        <div class="card-thumbnail-placeholder">🃏</div>
+        {% endif %}
+        <div class="card-details">
+          <h4 style="display:flex;align-items:center;flex-wrap:wrap;gap:0.15rem;">
+            {{ card.name }}
+            <span class="card-rarity-badge">{{ card.rarity }}</span>
+            {% if card.has_issues %}
+            <span class="issue-badge" data-tooltip="Missing values">!</span>
+            {% endif %}
+          </h4>
+          <p class="card-description">{{ card.description[:90] }}{% if card.description|length > 90 %}...{% endif %}</p>
+        </div>
+      </div>
+      <div class="card-actions">
+        <a href="/deck/{{ deck.deck_id }}/card/{{ card.card_id }}/edit" class="df-btn df-btn-sm df-btn-secondary">Edit</a>
+        <form method="POST" action="/deck/{{ deck.deck_id }}/card/{{ card.card_id }}/delete"
+              onsubmit="return confirm('Delete {{ card.name }}?');" style="display:inline;">
+          <button type="submit" class="df-btn df-btn-sm df-btn-danger">Delete</button>
+        </form>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="df-empty-state">No cards yet. Use "Add New Card" in the sidebar to get started.</p>
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const RARITY_ORDER = {
+  'Common': 1, 'Uncommon': 2, 'Exceptional': 3,
+  'Rare': 4, 'Epic': 5, 'Legendary': 6, 'Mythic': 7
+};
+
+function sortCards(mode) {
+  const list = document.getElementById('cards-list');
+  if (!list) return;
+  const items = Array.from(list.querySelectorAll('.card-item'));
+
+  items.sort(function(a, b) {
+    const nameA = a.dataset.name;
+    const nameB = b.dataset.name;
+    const rarityA = RARITY_ORDER[a.dataset.rarity] || 0;
+    const rarityB = RARITY_ORDER[b.dataset.rarity] || 0;
+    const issueA = a.dataset.hasIssues === 'true' ? 0 : 1;
+    const issueB = b.dataset.hasIssues === 'true' ? 0 : 1;
+
+    if (mode === 'rarity-desc') {
+      return rarityB !== rarityA ? rarityB - rarityA : nameA.localeCompare(nameB);
+    } else if (mode === 'rarity-asc') {
+      return rarityA !== rarityB ? rarityA - rarityB : nameA.localeCompare(nameB);
+    } else if (mode === 'name-asc') {
+      return nameA.localeCompare(nameB);
+    } else if (mode === 'name-desc') {
+      return nameB.localeCompare(nameA);
+    } else if (mode === 'issues') {
+      return issueA !== issueB ? issueA - issueB : rarityB - rarityA;
+    }
+    return 0;
+  });
+
+  items.forEach(function(item) { list.appendChild(item); });
+}
+</script>
 {% endblock %}

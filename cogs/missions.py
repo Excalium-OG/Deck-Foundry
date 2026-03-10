@@ -66,12 +66,15 @@ class MissionCommands(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.db_pool: asyncpg.Pool = bot.db_pool
+        self._last_daily_reroll = None
         self.backlog_refill_loop.start()
         self.mission_lifecycle_loop.start()
+        self.daily_reroll_loop.start()
 
     def cog_unload(self):
         self.backlog_refill_loop.cancel()
         self.mission_lifecycle_loop.cancel()
+        self.daily_reroll_loop.cancel()
 
     @tasks.loop(minutes=5)
     async def backlog_refill_loop(self):
@@ -98,6 +101,49 @@ class MissionCommands(commands.Cog):
     @mission_lifecycle_loop.before_loop
     async def before_lifecycle_check(self):
         await self.bot.wait_until_ready()
+
+    @tasks.loop(hours=1)
+    async def daily_reroll_loop(self):
+        """Full mission board reroll once per day at midnight UTC"""
+        try:
+            now = datetime.now(timezone.utc)
+            today = now.date()
+            if now.hour == 0 and self._last_daily_reroll != today:
+                self._last_daily_reroll = today
+                await self.reroll_all_mission_boards()
+                print(f"Daily mission reroll completed at {now.strftime('%Y-%m-%d %H:%M')} UTC")
+        except Exception as e:
+            print(f"Daily reroll loop error: {e}")
+
+    @daily_reroll_loop.before_loop
+    async def before_daily_reroll(self):
+        await self.bot.wait_until_ready()
+
+    async def reroll_all_mission_boards(self):
+        """Clear and regenerate all mission board slots for decks with active templates"""
+        async with self.db_pool.acquire() as conn:
+            decks = await conn.fetch(
+                """SELECT DISTINCT d.deck_id FROM decks d
+                   JOIN mission_templates mt ON d.deck_id = mt.deck_id
+                   WHERE mt.is_active = TRUE"""
+            )
+            count = 0
+            for deck in decks:
+                deck_id = deck['deck_id']
+                templates = await conn.fetch(
+                    """SELECT * FROM mission_templates WHERE deck_id = $1 AND is_active = TRUE""",
+                    deck_id
+                )
+                if not templates:
+                    continue
+                await conn.execute(
+                    "DELETE FROM mission_board_slots WHERE deck_id = $1",
+                    deck_id
+                )
+                for position in range(1, BOARD_TOTAL_SLOTS + 1):
+                    await self.generate_mission_slot(conn, deck_id, position, templates)
+                count += 1
+            return count
 
     async def refill_all_mission_boards(self):
         """Refill all deck mission boards to 10 slots"""
@@ -160,10 +206,13 @@ class MissionCommands(commands.Cog):
             return
         
         variance = template['variance_pct'] / 100.0
-        
-        base_req = template['min_value_base'] * scaling['requirement_multiplier']
-        req_variance = base_req * random.uniform(-variance, variance)
-        requirement_rolled = max(1, base_req + req_variance)
+
+        if template.get('require_card_attribute', True):
+            base_req = template['min_value_base'] * scaling['requirement_multiplier']
+            req_variance = base_req * random.uniform(-variance, variance)
+            requirement_rolled = max(1, base_req + req_variance)
+        else:
+            requirement_rolled = 0
         
         base_reward = template['reward_base'] * scaling['reward_multiplier']
         reward_variance = base_reward * random.uniform(-variance, variance)
@@ -219,7 +268,8 @@ class MissionCommands(commands.Cog):
                     await self.refill_mission_board(conn, deck_id)
             
             missions = await conn.fetch(
-                """SELECT mbs.*, mt.name as template_name, mt.description, mt.requirement_field
+                """SELECT mbs.*, mt.name as template_name, mt.description,
+                          mt.requirement_field, mt.require_card_attribute
                    FROM mission_board_slots mbs
                    JOIN mission_templates mt ON mbs.mission_template_id = mt.mission_template_id
                    WHERE mbs.deck_id = $1 AND mbs.slot_position <= $2
@@ -263,9 +313,13 @@ class MissionCommands(commands.Cog):
                 
                 acceptance_cost = int(mission['reward_rolled'] * 0.05)
                 
+                if mission.get('require_card_attribute', True) and mission['requirement_field']:
+                    req_line = f"📋 {mission['requirement_field']} >= {mission['requirement_rolled']:,.0f}\n"
+                else:
+                    req_line = "📋 Any card accepted\n"
                 field_value = (
                     f"{color_indicator.get(rarity, '⚪')} **{rarity}**\n"
-                    f"📋 {mission['requirement_field']} >= {mission['requirement_rolled']:,.0f}\n"
+                    f"{req_line}"
                     f"💰 Reward: {mission['reward_rolled']:,} credits\n"
                     f"⏱️ Duration: {mission['duration_rolled_hours']}h\n"
                     f"🎫 Cost: {acceptance_cost} credits"
@@ -342,7 +396,8 @@ class MissionCommands(commands.Cog):
                 return
             
             missions = await conn.fetch(
-                """SELECT mbs.*, mt.name as template_name, mt.requirement_field
+                """SELECT mbs.*, mt.name as template_name,
+                          mt.requirement_field, mt.require_card_attribute
                    FROM mission_board_slots mbs
                    JOIN mission_templates mt ON mbs.mission_template_id = mt.mission_template_id
                    WHERE mbs.deck_id = $1 AND mbs.slot_position <= $2
@@ -378,41 +433,42 @@ class MissionCommands(commands.Cog):
                     pass
                 return
             
-            try:
-                has_qualifying_card = await conn.fetchval(
-                    """SELECT COUNT(*) FROM user_cards uc
-                       JOIN cards c ON uc.card_id = c.card_id
-                       JOIN card_template_fields ctf ON c.card_id = ctf.card_id
-                       JOIN card_templates ct ON ctf.template_id = ct.template_id
-                       LEFT JOIN user_card_field_overrides ucfo ON uc.instance_id = ucfo.instance_id 
-                           AND ct.template_id = ucfo.template_id
-                       WHERE uc.user_id = $1 AND uc.recycled_at IS NULL
-                       AND ct.field_name = $2 AND ct.field_type = 'number'
-                       AND ctf.field_value ~ '^[0-9.]+$'
-                       AND COALESCE(ucfo.effective_numeric_value, CAST(ctf.field_value AS FLOAT)) >= $3""",
-                    payload.user_id, mission['requirement_field'], mission['requirement_rolled']
-                )
-            except Exception as e:
-                print(f"Error checking qualifying card: {e}")
-                has_qualifying_card = 0
-            
-            if not has_qualifying_card:
+            if mission.get('require_card_attribute', True) and mission['requirement_field']:
                 try:
-                    user = self.bot.get_user(payload.user_id)
-                    if user:
-                        await user.send(
-                            f"❌ **Unable to Accept Mission**\n"
-                            f"You don't have a card with **{mission['requirement_field']}** >= "
-                            f"**{mission['requirement_rolled']:,.0f}**.\n"
-                            f"Collect or merge cards to meet this requirement!"
-                        )
-                    channel = self.bot.get_channel(payload.channel_id)
-                    if channel:
-                        message = await channel.fetch_message(payload.message_id)
-                        await message.remove_reaction(emoji_str, discord.Object(id=payload.user_id))
-                except:
-                    pass
-                return
+                    has_qualifying_card = await conn.fetchval(
+                        """SELECT COUNT(*) FROM user_cards uc
+                           JOIN cards c ON uc.card_id = c.card_id
+                           JOIN card_template_fields ctf ON c.card_id = ctf.card_id
+                           JOIN card_templates ct ON ctf.template_id = ct.template_id
+                           LEFT JOIN user_card_field_overrides ucfo ON uc.instance_id = ucfo.instance_id 
+                               AND ct.template_id = ucfo.template_id
+                           WHERE uc.user_id = $1 AND uc.recycled_at IS NULL
+                           AND ct.field_name = $2 AND ct.field_type = 'number'
+                           AND ctf.field_value ~ '^[0-9.]+$'
+                           AND COALESCE(ucfo.effective_numeric_value, CAST(ctf.field_value AS FLOAT)) >= $3""",
+                        payload.user_id, mission['requirement_field'], mission['requirement_rolled']
+                    )
+                except Exception as e:
+                    print(f"Error checking qualifying card: {e}")
+                    has_qualifying_card = 0
+
+                if not has_qualifying_card:
+                    try:
+                        user = self.bot.get_user(payload.user_id)
+                        if user:
+                            await user.send(
+                                f"❌ **Unable to Accept Mission**\n"
+                                f"You don't have a card with **{mission['requirement_field']}** >= "
+                                f"**{mission['requirement_rolled']:,.0f}**.\n"
+                                f"Collect or merge cards to meet this requirement!"
+                            )
+                        channel = self.bot.get_channel(payload.channel_id)
+                        if channel:
+                            message = await channel.fetch_message(payload.message_id)
+                            await message.remove_reaction(emoji_str, discord.Object(id=payload.user_id))
+                    except:
+                        pass
+                    return
             
             now = datetime.now(timezone.utc)
             mission_expires = now + timedelta(days=1)
@@ -531,7 +587,7 @@ class MissionCommands(commands.Cog):
             if target_mission_id:
                 mission = await conn.fetchrow(
                     """SELECT am.*, mt.name as template_name, mt.requirement_field,
-                              mrs.success_rate
+                              mt.require_card_attribute, mrs.success_rate
                        FROM active_missions am
                        JOIN mission_templates mt ON am.mission_template_id = mt.mission_template_id
                        JOIN mission_rarity_scaling mrs ON mt.mission_template_id = mrs.mission_template_id
@@ -543,7 +599,7 @@ class MissionCommands(commands.Cog):
             else:
                 mission = await conn.fetchrow(
                     """SELECT am.*, mt.name as template_name, mt.requirement_field,
-                              mrs.success_rate
+                              mt.require_card_attribute, mrs.success_rate
                        FROM active_missions am
                        JOIN mission_templates mt ON am.mission_template_id = mt.mission_template_id
                        JOIN mission_rarity_scaling mrs ON mt.mission_template_id = mrs.mission_template_id
@@ -559,61 +615,107 @@ class MissionCommands(commands.Cog):
                 await ctx.send("You don't have any accepted missions waiting to start! Use `/missionboard` to accept one.")
                 return
             
-            if target_merge_level is not None:
-                qualifying_card = await conn.fetchrow(
-                    """SELECT uc.instance_id, uc.card_id, c.name, c.rarity,
-                              uc.merge_level, 
-                              COALESCE(ucfo.effective_numeric_value, CAST(ctf.field_value AS FLOAT)) as effective_value
-                       FROM user_cards uc
-                       JOIN cards c ON uc.card_id = c.card_id
-                       JOIN card_template_fields ctf ON c.card_id = ctf.card_id
-                       JOIN card_templates ct ON ctf.template_id = ct.template_id
-                       LEFT JOIN user_card_field_overrides ucfo ON uc.instance_id = ucfo.instance_id 
-                           AND ct.template_id = ucfo.template_id
-                       WHERE uc.user_id = $1 AND uc.recycled_at IS NULL
-                       AND LOWER(c.name) = LOWER($2)
-                       AND uc.merge_level = $5
-                       AND ct.field_name = $3 AND ct.field_type = 'number'
-                       AND ctf.field_value ~ '^[0-9.]+$'
-                       AND COALESCE(ucfo.effective_numeric_value, CAST(ctf.field_value AS FLOAT)) >= $4
-                       AND uc.instance_id NOT IN (
-                           SELECT card_instance_id FROM active_missions 
-                           WHERE status = 'active' AND started_at IS NOT NULL 
-                           AND card_instance_id IS NOT NULL
-                       )
-                       LIMIT 1""",
-                    user_id, actual_card_name, mission['requirement_field'], mission['requirement_rolled'], target_merge_level
-                )
+            require_attr = mission.get('require_card_attribute', True)
+            if require_attr and mission['requirement_field']:
+                if target_merge_level is not None:
+                    qualifying_card = await conn.fetchrow(
+                        """SELECT uc.instance_id, uc.card_id, c.name, c.rarity,
+                                  uc.merge_level, 
+                                  COALESCE(ucfo.effective_numeric_value, CAST(ctf.field_value AS FLOAT)) as effective_value
+                           FROM user_cards uc
+                           JOIN cards c ON uc.card_id = c.card_id
+                           JOIN card_template_fields ctf ON c.card_id = ctf.card_id
+                           JOIN card_templates ct ON ctf.template_id = ct.template_id
+                           LEFT JOIN user_card_field_overrides ucfo ON uc.instance_id = ucfo.instance_id 
+                               AND ct.template_id = ucfo.template_id
+                           WHERE uc.user_id = $1 AND uc.recycled_at IS NULL
+                           AND LOWER(c.name) = LOWER($2)
+                           AND uc.merge_level = $5
+                           AND ct.field_name = $3 AND ct.field_type = 'number'
+                           AND ctf.field_value ~ '^[0-9.]+$'
+                           AND COALESCE(ucfo.effective_numeric_value, CAST(ctf.field_value AS FLOAT)) >= $4
+                           AND uc.instance_id NOT IN (
+                               SELECT card_instance_id FROM active_missions 
+                               WHERE status = 'active' AND started_at IS NOT NULL 
+                               AND card_instance_id IS NOT NULL
+                           )
+                           LIMIT 1""",
+                        user_id, actual_card_name, mission['requirement_field'], mission['requirement_rolled'], target_merge_level
+                    )
+                else:
+                    qualifying_card = await conn.fetchrow(
+                        """SELECT uc.instance_id, uc.card_id, c.name, c.rarity,
+                                  uc.merge_level,
+                                  COALESCE(ucfo.effective_numeric_value, CAST(ctf.field_value AS FLOAT)) as effective_value
+                           FROM user_cards uc
+                           JOIN cards c ON uc.card_id = c.card_id
+                           JOIN card_template_fields ctf ON c.card_id = ctf.card_id
+                           JOIN card_templates ct ON ctf.template_id = ct.template_id
+                           LEFT JOIN user_card_field_overrides ucfo ON uc.instance_id = ucfo.instance_id 
+                               AND ct.template_id = ucfo.template_id
+                           WHERE uc.user_id = $1 AND uc.recycled_at IS NULL
+                           AND LOWER(c.name) = LOWER($2)
+                           AND ct.field_name = $3 AND ct.field_type = 'number'
+                           AND ctf.field_value ~ '^[0-9.]+$'
+                           AND COALESCE(ucfo.effective_numeric_value, CAST(ctf.field_value AS FLOAT)) >= $4
+                           AND uc.instance_id NOT IN (
+                               SELECT card_instance_id FROM active_missions 
+                               WHERE status = 'active' AND started_at IS NOT NULL 
+                               AND card_instance_id IS NOT NULL
+                           )
+                           ORDER BY uc.merge_level DESC
+                           LIMIT 1""",
+                        user_id, actual_card_name, mission['requirement_field'], mission['requirement_rolled']
+                    )
+                if not qualifying_card:
+                    await ctx.send(
+                        f"**{card_name}** doesn't qualify for this mission!\n"
+                        f"Need: {mission['requirement_field']} >= {mission['requirement_rolled']:,.0f}"
+                    )
+                    return
             else:
-                qualifying_card = await conn.fetchrow(
-                    """SELECT uc.instance_id, uc.card_id, c.name, c.rarity,
-                              uc.merge_level,
-                              COALESCE(ucfo.effective_numeric_value, CAST(ctf.field_value AS FLOAT)) as effective_value
-                       FROM user_cards uc
-                       JOIN cards c ON uc.card_id = c.card_id
-                       JOIN card_template_fields ctf ON c.card_id = ctf.card_id
-                       JOIN card_templates ct ON ctf.template_id = ct.template_id
-                       LEFT JOIN user_card_field_overrides ucfo ON uc.instance_id = ucfo.instance_id 
-                           AND ct.template_id = ucfo.template_id
-                       WHERE uc.user_id = $1 AND uc.recycled_at IS NULL
-                       AND LOWER(c.name) = LOWER($2)
-                       AND ct.field_name = $3 AND ct.field_type = 'number'
-                       AND ctf.field_value ~ '^[0-9.]+$'
-                       AND COALESCE(ucfo.effective_numeric_value, CAST(ctf.field_value AS FLOAT)) >= $4
-                       AND uc.instance_id NOT IN (
-                           SELECT card_instance_id FROM active_missions 
-                           WHERE status = 'active' AND started_at IS NOT NULL 
-                           AND card_instance_id IS NOT NULL
-                       )
-                       ORDER BY uc.merge_level DESC
-                       LIMIT 1""",
-                    user_id, actual_card_name, mission['requirement_field'], mission['requirement_rolled']
-                )
-            
-            if not qualifying_card:
+                # No attribute requirement — any owned, non-locked card with that name qualifies
+                if target_merge_level is not None:
+                    qualifying_card = await conn.fetchrow(
+                        """SELECT uc.instance_id, uc.card_id, c.name, c.rarity, uc.merge_level
+                           FROM user_cards uc
+                           JOIN cards c ON uc.card_id = c.card_id
+                           WHERE uc.user_id = $1 AND uc.recycled_at IS NULL
+                           AND LOWER(c.name) = LOWER($2)
+                           AND uc.merge_level = $3
+                           AND uc.instance_id NOT IN (
+                               SELECT card_instance_id FROM active_missions 
+                               WHERE status = 'active' AND started_at IS NOT NULL 
+                               AND card_instance_id IS NOT NULL
+                           )
+                           LIMIT 1""",
+                        user_id, actual_card_name, target_merge_level
+                    )
+                else:
+                    qualifying_card = await conn.fetchrow(
+                        """SELECT uc.instance_id, uc.card_id, c.name, c.rarity, uc.merge_level
+                           FROM user_cards uc
+                           JOIN cards c ON uc.card_id = c.card_id
+                           WHERE uc.user_id = $1 AND uc.recycled_at IS NULL
+                           AND LOWER(c.name) = LOWER($2)
+                           AND uc.instance_id NOT IN (
+                               SELECT card_instance_id FROM active_missions 
+                               WHERE status = 'active' AND started_at IS NOT NULL 
+                               AND card_instance_id IS NOT NULL
+                           )
+                           ORDER BY uc.merge_level DESC
+                           LIMIT 1""",
+                        user_id, actual_card_name
+                    )
+                if not qualifying_card:
+                    await ctx.send(f"You don't have a card named **{card_name}** available for missions.")
+                    return
+
+            # Check if the qualifying card is locked in an active PvP duel
+            locked = getattr(self.bot, 'pvp_locked_cards', set())
+            if str(qualifying_card['instance_id']) in locked:
                 await ctx.send(
-                    f"**{card_name}** doesn't qualify for this mission!\n"
-                    f"Need: {mission['requirement_field']} >= {mission['requirement_rolled']:,.0f}"
+                    f"❌ **{qualifying_card['name']}** is locked in an active duel and cannot be sent on a mission right now."
                 )
                 return
             
@@ -734,7 +836,7 @@ class MissionCommands(commands.Cog):
         async with self.db_pool.acquire() as conn:
             if target_mission_id:
                 mission = await conn.fetchrow(
-                    """SELECT am.*, mt.requirement_field
+                    """SELECT am.*, mt.requirement_field, mt.require_card_attribute
                        FROM active_missions am
                        JOIN mission_templates mt ON am.mission_template_id = mt.mission_template_id
                        WHERE am.active_mission_id = $1 AND am.accepted_by = $2 
@@ -743,7 +845,7 @@ class MissionCommands(commands.Cog):
                 )
             else:
                 mission = await conn.fetchrow(
-                    """SELECT am.*, mt.requirement_field
+                    """SELECT am.*, mt.requirement_field, mt.require_card_attribute
                        FROM active_missions am
                        JOIN mission_templates mt ON am.mission_template_id = mt.mission_template_id
                        WHERE am.accepted_by = $1 
@@ -755,39 +857,63 @@ class MissionCommands(commands.Cog):
             
             if not mission:
                 return []
-            
-            cards = await conn.fetch(
-                """SELECT DISTINCT c.name, c.rarity, uc.merge_level, 
-                          COALESCE(ucfo.effective_numeric_value, CAST(ctf.field_value AS FLOAT)) as effective_value
-                   FROM user_cards uc
-                   JOIN cards c ON uc.card_id = c.card_id
-                   JOIN card_template_fields ctf ON c.card_id = ctf.card_id
-                   JOIN card_templates ct ON ctf.template_id = ct.template_id
-                   LEFT JOIN user_card_field_overrides ucfo ON uc.instance_id = ucfo.instance_id 
-                       AND ct.template_id = ucfo.template_id
-                   WHERE uc.user_id = $1 AND uc.recycled_at IS NULL
-                   AND ct.field_name = $2 AND ct.field_type = 'number'
-                   AND ctf.field_value ~ '^[0-9.]+$'
-                   AND COALESCE(ucfo.effective_numeric_value, CAST(ctf.field_value AS FLOAT)) >= $3
-                   AND LOWER(c.name) LIKE LOWER($4)
-                   AND uc.instance_id NOT IN (
-                       SELECT card_instance_id FROM active_missions 
-                       WHERE status = 'active' AND started_at IS NOT NULL 
-                       AND card_instance_id IS NOT NULL
-                   )
-                   ORDER BY uc.merge_level DESC, c.name
-                   LIMIT 25""",
-                user_id, mission['requirement_field'], mission['requirement_rolled'],
-                f"%{current}%"
-            )
-            
+
             choices = []
-            for card in cards:
-                merge_display = f" ★{card['merge_level']}" if card['merge_level'] > 0 else ""
-                display = f"{card['name']}{merge_display} [{card['rarity']}] ({float(card['effective_value']):,.0f})"
-                value = f"{card['name']}|{card['merge_level']}"
-                choices.append(app_commands.Choice(name=display[:100], value=value))
-            
+            require_attr = mission.get('require_card_attribute', True)
+
+            if require_attr and mission['requirement_field']:
+                cards = await conn.fetch(
+                    """SELECT DISTINCT c.name, c.rarity, uc.merge_level, 
+                              COALESCE(ucfo.effective_numeric_value, CAST(ctf.field_value AS FLOAT)) as effective_value
+                       FROM user_cards uc
+                       JOIN cards c ON uc.card_id = c.card_id
+                       JOIN card_template_fields ctf ON c.card_id = ctf.card_id
+                       JOIN card_templates ct ON ctf.template_id = ct.template_id
+                       LEFT JOIN user_card_field_overrides ucfo ON uc.instance_id = ucfo.instance_id 
+                           AND ct.template_id = ucfo.template_id
+                       WHERE uc.user_id = $1 AND uc.recycled_at IS NULL
+                       AND ct.field_name = $2 AND ct.field_type = 'number'
+                       AND ctf.field_value ~ '^[0-9.]+$'
+                       AND COALESCE(ucfo.effective_numeric_value, CAST(ctf.field_value AS FLOAT)) >= $3
+                       AND LOWER(c.name) LIKE LOWER($4)
+                       AND uc.instance_id NOT IN (
+                           SELECT card_instance_id FROM active_missions 
+                           WHERE status = 'active' AND started_at IS NOT NULL 
+                           AND card_instance_id IS NOT NULL
+                       )
+                       ORDER BY uc.merge_level DESC, c.name
+                       LIMIT 25""",
+                    user_id, mission['requirement_field'], mission['requirement_rolled'],
+                    f"%{current}%"
+                )
+                for card in cards:
+                    merge_display = f" ★{card['merge_level']}" if card['merge_level'] > 0 else ""
+                    display = f"{card['name']}{merge_display} [{card['rarity']}] ({float(card['effective_value']):,.0f})"
+                    value = f"{card['name']}|{card['merge_level']}"
+                    choices.append(app_commands.Choice(name=display[:100], value=value))
+            else:
+                cards = await conn.fetch(
+                    """SELECT DISTINCT c.name, c.rarity, uc.merge_level
+                       FROM user_cards uc
+                       JOIN cards c ON uc.card_id = c.card_id
+                       WHERE uc.user_id = $1 AND uc.recycled_at IS NULL
+                       AND c.deck_id = $2
+                       AND LOWER(c.name) LIKE LOWER($3)
+                       AND uc.instance_id NOT IN (
+                           SELECT card_instance_id FROM active_missions 
+                           WHERE status = 'active' AND started_at IS NOT NULL 
+                           AND card_instance_id IS NOT NULL
+                       )
+                       ORDER BY uc.merge_level DESC, c.name
+                       LIMIT 25""",
+                    user_id, mission['deck_id'], f"%{current}%"
+                )
+                for card in cards:
+                    merge_display = f" ★{card['merge_level']}" if card['merge_level'] > 0 else ""
+                    display = f"{card['name']}{merge_display} [{card['rarity']}]"
+                    value = f"{card['name']}|{card['merge_level']}"
+                    choices.append(app_commands.Choice(name=display[:100], value=value))
+
             return choices
 
     async def process_mission_lifecycle(self):
@@ -973,7 +1099,7 @@ class MissionCommands(commands.Cog):
     async def refill_board(self, ctx):
         """[ADMIN] Manually refill the mission board"""
         if not self.is_admin(ctx.author.id):
-            await ctx.send("This command is only available to DeckForge admins.")
+            await ctx.send("This command is only available to Deck Foundry admins.")
             return
         
         guild_id = ctx.guild.id if ctx.guild else None
@@ -997,7 +1123,7 @@ class MissionCommands(commands.Cog):
         Usage: !mcomplete <mission_id>
         """
         if not self.is_admin(ctx.author.id):
-            await ctx.send("This command is only available to DeckForge admins.")
+            await ctx.send("This command is only available to Deck Foundry admins.")
             return
         
         now = datetime.now(timezone.utc)
@@ -1172,6 +1298,16 @@ class MissionCommands(commands.Cog):
                         print(f"Failed to send monthly reward DM: {e}")
                 
                 print(f"Processed monthly reset for deck {deck['name']} ({deck_id})")
+
+    @commands.command(name='rerollmissions')
+    async def reroll_missions_admin(self, ctx):
+        """[ADMIN] Force an immediate mission board reroll for all active decks"""
+        admin_ids = getattr(self.bot, 'admin_ids', [])
+        if ctx.author.id not in admin_ids and ctx.author.id != self.bot.owner_id:
+            return
+        msg = await ctx.send("⏳ Rerolling mission boards for all active decks...")
+        count = await self.reroll_all_mission_boards()
+        await msg.edit(content=f"✅ Mission boards rerolled for **{count}** deck(s).")
 
 
 async def setup(bot):

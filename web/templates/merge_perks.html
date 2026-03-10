@@ -1,0 +1,74 @@
+{% extends "deck_base.html" %}
+
+{% block title %}Merge Perks - {{ deck.name }}{% endblock %}
+{% block page_title %}Merge Perks{% endblock %}
+
+{% block deck_content %}
+<div class="deck-content-card">
+  <div class="df-info-box">
+    <strong>How merge perks work:</strong> Players select a perk the first time they merge a card. The perk permanently boosts a numeric attribute with diminishing returns at higher merge levels.
+    <br><small>Example: 10% base &rarr; L1: +10%, L2: +8.5%, L3: +7.2%, L4: +6.1%, L5: +5.2%</small>
+  </div>
+
+  {% if number_template_fields %}
+  <div class="df-section">
+    <h3>Add New Merge Perk</h3>
+    <form method="POST" action="/deck/{{ deck.deck_id }}/merge_perk/add">
+      <div class="df-form-row">
+        <div class="df-form-group">
+          <label for="perk_name">Attribute to Boost *</label>
+          <select id="perk_name" name="perk_name" required>
+            <option value="">Select an attribute...</option>
+            {% for field in number_template_fields %}
+            <option value="{{ field.field_name }}">{{ field.field_name }}</option>
+            {% endfor %}
+          </select>
+          <small>Must be a number-type field from your card template</small>
+        </div>
+        <div class="df-form-group">
+          <label for="base_boost">Base Boost (%) *</label>
+          <input type="number" id="base_boost" name="base_boost" required
+                 min="0.1" max="100" step="0.1" placeholder="10.0">
+          <small>Percentage boost at merge level 1 (e.g., 10 = +10%)</small>
+        </div>
+      </div>
+      <button type="submit" class="df-btn df-btn-primary">Add Perk</button>
+    </form>
+  </div>
+  {% else %}
+  <p class="df-empty-state">No number-based template fields defined. Add numeric attributes (like "Attack", "Defense", "Speed") in your card template to enable merge perks.</p>
+  {% endif %}
+
+  <div class="df-section">
+    <h3>Current Merge Perks{% if merge_perks %} ({{ merge_perks|length }}){% endif %}</h3>
+    {% if merge_perks %}
+    <div style="display:flex;flex-direction:column;gap:1rem;">
+      {% for perk in merge_perks %}
+      <div style="background:#f9fafb;border:2px solid #e5e7eb;border-radius:8px;padding:1.25rem;display:flex;justify-content:space-between;align-items:flex-start;">
+        <div>
+          <strong style="font-size:1rem;color:#1f2937;">{{ perk.perk_name }}</strong>
+          <div style="display:flex;gap:2rem;margin-top:0.4rem;font-size:0.88rem;color:#6b7280;">
+            <span>Base Boost: <strong style="color:#374151;">+{{ perk.base_boost }}%</strong></span>
+            <span>Diminishing Factor: <strong style="color:#374151;">{{ perk.diminishing_factor }}</strong></span>
+          </div>
+          <div style="margin-top:0.4rem;font-size:0.82rem;color:#9ca3af;">
+            L1: +{{ "%.1f"|format(perk.base_boost) }}%,
+            L2: +{{ "%.1f"|format(perk.base_boost * perk.diminishing_factor) }}%,
+            L3: +{{ "%.1f"|format(perk.base_boost * (perk.diminishing_factor ** 2)) }}%,
+            L4: +{{ "%.1f"|format(perk.base_boost * (perk.diminishing_factor ** 3)) }}%,
+            L5: +{{ "%.1f"|format(perk.base_boost * (perk.diminishing_factor ** 4)) }}%
+          </div>
+        </div>
+        <form method="POST" action="/deck/{{ deck.deck_id }}/merge_perk/{{ perk.perk_name }}/delete"
+              onsubmit="return confirm('Delete merge perk \'{{ perk.perk_name }}\'? Existing merged cards keep their bonuses.');">
+          <button type="submit" class="df-btn df-btn-sm df-btn-danger">Delete</button>
+        </form>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <p class="df-empty-state">No merge perks configured yet.</p>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

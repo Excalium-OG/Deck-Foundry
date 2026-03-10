@@ -1,48 +1,10 @@
-{% extends "base.html" %}
+{% extends "deck_base.html" %}
 
 {% block title %}Card Activities - {{ deck.name }}{% endblock %}
+{% block page_title %}Card Activities{% endblock %}
 
-{% block content %}
+{% block deck_content %}
 <style>
-  .activities-container {
-    background: white;
-    border-radius: 12px;
-    padding: 2rem;
-    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-  }
-
-  .activities-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 2rem;
-  }
-
-  .activities-header h2 {
-    margin: 0;
-  }
-
-  .header-actions {
-    display: flex;
-    gap: 0.5rem;
-  }
-
-  .info-box {
-    background: #f0f9ff;
-    border-left: 4px solid #3b82f6;
-    padding: 1rem;
-    margin: 1rem 0;
-    border-radius: 4px;
-    font-size: 0.9rem;
-  }
-
-  .activities-list {
-    display: flex;
-    flex-direction: column;
-    gap: 1rem;
-    margin-top: 1.5rem;
-  }
-
   .activity-item {
     background: #f9fafb;
     border: 2px solid #e5e7eb;
@@ -51,195 +13,175 @@
     display: flex;
     justify-content: space-between;
     align-items: flex-start;
+    margin-bottom: 0.75rem;
   }
-
-  .activity-item.inactive {
-    opacity: 0.6;
-    border-color: #d1d5db;
-  }
-
-  .activity-info {
-    flex: 1;
-  }
-
-  .activity-info h4 {
-    margin: 0 0 0.5rem 0;
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-  }
-
+  .activity-item.inactive { opacity: 0.6; border-color: #d1d5db; }
+  .activity-info { flex: 1; }
+  .activity-info h4 { margin: 0 0 0.5rem 0; display: flex; align-items: center; gap: 0.5rem; }
   .activity-type-badge {
-    display: inline-block;
-    padding: 0.2rem 0.5rem;
-    background: #667eea;
-    color: white;
-    border-radius: 4px;
-    font-size: 0.75rem;
-    font-weight: normal;
-    text-transform: uppercase;
+    display: inline-block; padding: 0.2rem 0.5rem; background: #667eea;
+    color: white; border-radius: 4px; font-size: 0.72rem; font-weight: 600; text-transform: uppercase;
   }
-
   .activity-status-badge {
-    display: inline-block;
-    padding: 0.2rem 0.5rem;
-    border-radius: 4px;
-    font-size: 0.75rem;
-    font-weight: normal;
+    display: inline-block; padding: 0.2rem 0.5rem; border-radius: 4px;
+    font-size: 0.72rem; font-weight: 600;
   }
-
-  .activity-status-badge.active {
-    background: #10b981;
-    color: white;
-  }
-
-  .activity-status-badge.inactive {
-    background: #6b7280;
-    color: white;
-  }
-
+  .activity-status-badge.active { background: #10b981; color: white; }
+  .activity-status-badge.inactive { background: #6b7280; color: white; }
   .activity-details {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-    gap: 0.75rem;
-    margin-top: 0.75rem;
-    font-size: 0.9rem;
-    color: #6b7280;
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 0.6rem; margin-top: 0.6rem; font-size: 0.88rem; color: #6b7280;
   }
-
-  .activity-detail {
-    display: flex;
-    flex-direction: column;
-  }
-
-  .activity-detail strong {
-    color: #374151;
-  }
-
-  .activity-description {
-    margin-top: 0.5rem;
-    font-size: 0.9rem;
-    color: #4b5563;
-    font-style: italic;
-  }
-
-  .activity-actions {
-    display: flex;
-    gap: 0.5rem;
-  }
-
-  .empty-state {
-    text-align: center;
-    color: #6b7280;
-    padding: 3rem;
-    font-style: italic;
-  }
-
-  .btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.75rem 1.5rem;
-    border-radius: 8px;
-    text-decoration: none;
-    font-weight: 600;
-    border: 2px solid transparent;
-    cursor: pointer;
-    font-size: 1rem;
-  }
-
-  .btn-primary {
-    background: #667eea;
-    color: white;
-    border-color: #5568d3;
-  }
-
-  .btn-secondary {
-    background: white;
-    color: #374151;
-    border-color: #d1d5db;
-  }
-
-  .btn-danger {
-    background: #ef4444;
-    color: white;
-    border-color: #dc2626;
-  }
-
-  .btn-sm {
-    padding: 0.5rem 1rem;
-    font-size: 0.875rem;
-  }
+  .activity-detail { display: flex; flex-direction: column; }
+  .activity-detail strong { color: #374151; }
+  .activity-description { margin-top: 0.4rem; font-size: 0.88rem; color: #4b5563; font-style: italic; }
+  .activity-actions { display: flex; gap: 0.5rem; flex-shrink: 0; }
 </style>
 
-<div class="activities-container">
-    <div class="activities-header">
-        <h2>Card Activities - {{ deck.name }}</h2>
-        <div class="header-actions">
-            <a href="/deck/{{ deck.deck_id }}/activity/new" class="btn btn-primary">Add Card Activity</a>
-            <a href="/deck/{{ deck.deck_id }}/edit" class="btn btn-secondary">Back to Deck</a>
+<div class="deck-content-card">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.25rem;">
+    <span style="color:#374151;font-weight:600;">{{ activities|length if activities else 0 }} activities configured</span>
+    <a href="/deck/{{ deck.deck_id }}/activity/new" class="df-btn df-btn-primary df-btn-sm">Add Activity</a>
+  </div>
+
+  <div class="df-info-box">
+    <strong>About Card Activities:</strong> Activities are missions players can accept using their cards, scaled by rarity.
+    Configure a Mission Channel in server settings to enable automatic mission spawning.
+  </div>
+
+  {% if request.query_params.get('pvp_saved') %}
+  <div style="background:#d1fae5;color:#065f46;border:1px solid #10b981;padding:0.65rem 1rem;border-radius:7px;margin-bottom:1rem;font-size:0.9rem;">
+    PvP settings saved.
+  </div>
+  {% endif %}
+
+  {% if activities %}
+  <div style="margin-top:1.25rem;">
+    {% for activity in activities %}
+    <div class="activity-item {% if not activity.is_active %}inactive{% endif %}">
+      <div class="activity-info">
+        <h4>
+          {{ activity.name }}
+          <span class="activity-type-badge">{{ activity.activity_type }}</span>
+          {% if activity.is_active %}
+          <span class="activity-status-badge active">Active</span>
+          {% else %}
+          <span class="activity-status-badge inactive">Inactive</span>
+          {% endif %}
+        </h4>
+        <div class="activity-details">
+          <div class="activity-detail">
+            <span>Requirement</span>
+            {% if activity.get('require_card_attribute', True) and activity.requirement_field %}
+            <strong>{{ activity.requirement_field }} &ge; {{ activity.min_value_base|int }}</strong>
+            {% else %}
+            <strong>Any card</strong>
+            {% endif %}
+          </div>
+          <div class="activity-detail">
+            <span>Base Reward</span>
+            <strong>{{ activity.reward_base }} credits</strong>
+          </div>
+          <div class="activity-detail">
+            <span>Duration</span>
+            <strong>{{ activity.duration_base_hours }} hours</strong>
+          </div>
+          <div class="activity-detail">
+            <span>Variance</span>
+            <strong>+/- {{ activity.variance_pct }}%</strong>
+          </div>
         </div>
+        {% if activity.description %}
+        <p class="activity-description">"{{ activity.description }}"</p>
+        {% endif %}
+      </div>
+      <div class="activity-actions">
+        <a href="/deck/{{ deck.deck_id }}/activity/{{ activity.mission_template_id }}/edit"
+           class="df-btn df-btn-sm df-btn-secondary">Edit</a>
+        <form method="POST" action="/deck/{{ deck.deck_id }}/activity/{{ activity.mission_template_id }}/delete"
+              onsubmit="return confirm('Delete activity \'{{ activity.name }}\'? This cannot be undone.');"
+              style="display:inline;">
+          <button type="submit" class="df-btn df-btn-sm df-btn-danger">Delete</button>
+        </form>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="df-empty-state">No card activities configured yet. Add your first activity to enable missions!</p>
+  {% endif %}
+</div>
+
+<div class="deck-content-card" style="margin-top:1.5rem;">
+  <h3 style="margin:0 0 1rem;color:#374151;font-size:1.05rem;">⚔️ PvP Settings</h3>
+
+  <div class="df-info-box" style="margin-bottom:1.25rem;">
+    <strong>About PvP:</strong> When enabled, players can challenge each other to card duels using
+    <code>/duel @user</code>. A selected numeric attribute is used in the power formula alongside
+    rarity and merge level.
+  </div>
+
+  <form method="POST" action="/deck/{{ deck.deck_id }}/pvp-settings">
+    <div class="df-form-group">
+      <label style="display:flex;align-items:center;gap:0.5rem;cursor:pointer;font-weight:600;">
+        <input type="checkbox" name="pvp_enabled" value="1"
+               id="pvp-toggle"
+               onchange="document.getElementById('pvp-options').style.display=this.checked?'block':'none'"
+               {% if deck.get('pvp_enabled') %}checked{% endif %}>
+        Enable PvP duels for this deck
+      </label>
+      <small style="color:#6b7280;font-size:0.85rem;margin-top:0.25rem;display:block;">
+        Allows players to use /duel in servers assigned to this deck.
+      </small>
     </div>
 
-    <div class="info-box">
-        <strong>About Card Activities:</strong> Card activities are missions and challenges that players can accept using their cards. 
-        Missions are tied to card attributes and scale based on rarity. Currently only "Mission" type is available; Versus and Tournament types will be added later.
-        <br><br>
-        <strong>Note:</strong> Configure your Mission Channel in server settings to enable mission spawning. Missions spawn hourly based on server chat activity.
+    <div id="pvp-options" {% if not deck.get('pvp_enabled') %}style="display:none;"{% endif %}>
+      <div class="df-form-group">
+        <label for="pvp-attr" style="font-weight:600;">PvP Attribute *</label>
+        <select name="pvp_attribute" id="pvp-attr">
+          <option value="">-- Select a numeric attribute --</option>
+          {% for f in number_template_fields %}
+          <option value="{{ f.field_name }}"
+                  {% if deck.get('pvp_attribute') == f.field_name %}selected{% endif %}>
+            {{ f.field_name }}
+          </option>
+          {% endfor %}
+        </select>
+        {% if not number_template_fields %}
+        <small style="color:#dc2626;">
+          No numeric attributes defined. Add one in <a href="/deck/{{ deck.deck_id }}/template">Card Template</a>.
+        </small>
+        {% else %}
+        <small style="color:#6b7280;">This attribute is factored into each card's duel power score.</small>
+        {% endif %}
+      </div>
+
+      <div class="df-form-group">
+        <label style="display:flex;align-items:center;gap:0.5rem;cursor:pointer;">
+          <input type="checkbox" name="allow_no_stake" value="1"
+                 {% if deck.get('allow_no_stake') %}checked{% endif %}>
+          Allow No-Stake duels
+        </label>
+        <small style="color:#6b7280;font-size:0.85rem;">
+          When enabled, players may choose not to wager anything.
+        </small>
+      </div>
+
+      <div class="df-form-group">
+        <label style="display:flex;align-items:center;gap:0.5rem;cursor:pointer;">
+          <input type="checkbox" name="vp_enabled" value="1"
+                 {% if deck.get('vp_enabled', True) %}checked{% endif %}>
+          Enable VP Leaderboard
+        </label>
+        <small style="color:#6b7280;font-size:0.85rem;">
+          Winners earn Victory Points. Use /pvpleaderboard to see rankings.
+        </small>
+      </div>
     </div>
 
-    {% if activities %}
-    <div class="activities-list">
-        {% for activity in activities %}
-        <div class="activity-item {% if not activity.is_active %}inactive{% endif %}">
-            <div class="activity-info">
-                <h4>
-                    {{ activity.name }}
-                    <span class="activity-type-badge">{{ activity.activity_type }}</span>
-                    {% if activity.is_active %}
-                    <span class="activity-status-badge active">Active</span>
-                    {% else %}
-                    <span class="activity-status-badge inactive">Inactive</span>
-                    {% endif %}
-                </h4>
-                
-                <div class="activity-details">
-                    <div class="activity-detail">
-                        <span>Requirement</span>
-                        <strong>{{ activity.requirement_field }} >= {{ activity.min_value_base|int }}</strong>
-                    </div>
-                    <div class="activity-detail">
-                        <span>Base Reward</span>
-                        <strong>{{ activity.reward_base }} credits</strong>
-                    </div>
-                    <div class="activity-detail">
-                        <span>Duration</span>
-                        <strong>{{ activity.duration_base_hours }} hours</strong>
-                    </div>
-                    <div class="activity-detail">
-                        <span>Variance</span>
-                        <strong>+/- {{ activity.variance_pct }}%</strong>
-                    </div>
-                </div>
-                
-                {% if activity.description %}
-                <p class="activity-description">"{{ activity.description }}"</p>
-                {% endif %}
-            </div>
-            
-            <div class="activity-actions">
-                <a href="/deck/{{ deck.deck_id }}/activity/{{ activity.mission_template_id }}/edit" class="btn btn-sm btn-secondary">Edit</a>
-                <form method="POST" action="/deck/{{ deck.deck_id }}/activity/{{ activity.mission_template_id }}/delete" 
-                      onsubmit="return confirm('Delete activity \'{{ activity.name }}\'? This cannot be undone.');" 
-                      style="display: inline;">
-                    <button type="submit" class="btn btn-sm btn-danger">Delete</button>
-                </form>
-            </div>
-        </div>
-        {% endfor %}
+    <div style="margin-top:1rem;">
+      <button type="submit" class="df-btn df-btn-primary df-btn-sm">Save PvP Settings</button>
     </div>
-    {% else %}
-    <p class="empty-state">No card activities configured yet. Add your first activity to enable missions!</p>
-    {% endif %}
+  </form>
 </div>
 {% endblock %}

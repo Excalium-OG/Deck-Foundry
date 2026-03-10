@@ -1,5 +1,5 @@
 """
-Custom Help Command for DeckForge
+Custom Help Command for Deck Foundry
 Filters admin commands based on user permissions
 """
 import discord
@@ -13,7 +13,7 @@ class CustomHelp(commands.Cog):
         self.bot = bot
         self.admin_ids = bot.admin_ids
         self._original_help_command = bot.help_command
-        bot.help_command = DeckForgeHelpCommand()
+        bot.help_command = DeckFoundryHelpCommand()
         bot.help_command.cog = self
     
     def cog_unload(self):
@@ -24,7 +24,7 @@ class CustomHelp(commands.Cog):
         return user_id in self.admin_ids or user_id == self.bot.owner_id
 
 
-class DeckForgeHelpCommand(commands.DefaultHelpCommand):
+class DeckFoundryHelpCommand(commands.DefaultHelpCommand):
     """Custom help command that filters admin-only commands"""
     
     def get_command_signature(self, command):

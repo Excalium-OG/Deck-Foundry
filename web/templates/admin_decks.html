@@ -1,0 +1,253 @@
+{% extends "base.html" %}
+
+{% block title %}Deck Management - Deck Foundry Administration{% endblock %}
+
+{% block content %}
+<style>
+  .admin-page {
+    background: white;
+    border-radius: 12px;
+    padding: 2rem;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+  }
+
+  .admin-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 2rem;
+    flex-wrap: wrap;
+    gap: 1rem;
+  }
+
+  .admin-header h2 {
+    font-size: 2rem;
+    margin: 0;
+  }
+
+  .deck-count {
+    color: #6b7280;
+    font-size: 0.95rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .deck-table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  .deck-table th {
+    text-align: left;
+    padding: 0.75rem 1rem;
+    background: #f3f4f6;
+    font-weight: 600;
+    color: #374151;
+    font-size: 0.875rem;
+    border-bottom: 2px solid #e5e7eb;
+  }
+
+  .deck-table td {
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid #f3f4f6;
+    vertical-align: middle;
+  }
+
+  .deck-table tr:hover {
+    background: #f9fafb;
+  }
+
+  .deck-table tr.disabled-row {
+    background: #fef2f2;
+  }
+
+  .deck-table tr.disabled-row:hover {
+    background: #fee2e2;
+  }
+
+  .status-badge {
+    display: inline-block;
+    padding: 0.25rem 0.75rem;
+    border-radius: 999px;
+    font-size: 0.8rem;
+    font-weight: 600;
+  }
+
+  .status-active {
+    background: #d1fae5;
+    color: #065f46;
+  }
+
+  .status-disabled {
+    background: #fee2e2;
+    color: #991b1b;
+  }
+
+  .action-buttons {
+    display: flex;
+    gap: 0.5rem;
+  }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1.5rem;
+    border-radius: 8px;
+    text-decoration: none;
+    font-weight: 600;
+    transition: all 0.3s ease;
+    border: 2px solid transparent;
+    cursor: pointer;
+    font-size: 1rem;
+  }
+
+  .btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+  }
+
+  .btn-primary {
+    background: #667eea;
+    color: white;
+    border-color: #5568d3;
+  }
+
+  .btn-primary:hover {
+    background: #5568d3;
+  }
+
+  .btn-secondary {
+    background: white;
+    color: #374151;
+    border-color: #d1d5db;
+  }
+
+  .btn-secondary:hover {
+    background: #f9fafb;
+  }
+
+  .btn-danger {
+    background: #ef4444;
+    color: white;
+    border-color: #dc2626;
+  }
+
+  .btn-danger:hover {
+    background: #dc2626;
+  }
+
+  .btn-success {
+    background: #10b981;
+    color: white;
+    border-color: #059669;
+  }
+
+  .btn-success:hover {
+    background: #059669;
+  }
+
+  .btn-sm {
+    padding: 0.4rem 0.8rem;
+    font-size: 0.8rem;
+  }
+
+  .alert {
+    padding: 1rem;
+    border-radius: 8px;
+    margin-bottom: 1.5rem;
+  }
+
+  .alert-success {
+    background: #d1fae5;
+    color: #065f46;
+    border: 1px solid #10b981;
+  }
+
+  .alert-error {
+    background: #fee2e2;
+    color: #991b1b;
+    border: 1px solid #ef4444;
+  }
+
+  .empty-state {
+    text-align: center;
+    color: #6b7280;
+    padding: 3rem;
+    font-style: italic;
+  }
+
+  @media (max-width: 768px) {
+    .deck-table {
+      display: block;
+      overflow-x: auto;
+    }
+  }
+</style>
+
+<div class="admin-page">
+    <div class="admin-header">
+        <h2>Deck Management</h2>
+        <a href="/admin" class="btn btn-secondary">Back to Administration</a>
+    </div>
+
+    {% if success %}
+    <div class="alert alert-success">{{ success }}</div>
+    {% endif %}
+
+    {% if error %}
+    <div class="alert alert-error">{{ error }}</div>
+    {% endif %}
+
+    <p class="deck-count">{{ decks|length }} deck(s) on the platform</p>
+
+    {% if decks %}
+    <table class="deck-table">
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Name</th>
+                <th>Creator ID</th>
+                <th>Created</th>
+                <th>Public</th>
+                <th>Status</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for deck in decks %}
+            <tr class="{% if deck.disabled %}disabled-row{% endif %}">
+                <td>{{ deck.deck_id }}</td>
+                <td><strong>{{ deck.name }}</strong></td>
+                <td>{{ deck.created_by }}</td>
+                <td>{{ deck.created_at.strftime('%Y-%m-%d') if deck.created_at else 'N/A' }}</td>
+                <td>{% if deck.is_public %}Yes{% else %}No{% endif %}</td>
+                <td>
+                    {% if deck.disabled %}
+                    <span class="status-badge status-disabled">Disabled</span>
+                    {% else %}
+                    <span class="status-badge status-active">Active</span>
+                    {% endif %}
+                </td>
+                <td>
+                    <div class="action-buttons">
+                        <a href="/deck/{{ deck.deck_id }}/view" class="btn btn-sm btn-secondary">View</a>
+                        {% if deck.disabled %}
+                        <form method="POST" action="/admin/deck/{{ deck.deck_id }}/enable" style="display:inline;">
+                            <button type="submit" class="btn btn-sm btn-success">Enable</button>
+                        </form>
+                        {% else %}
+                        <form method="POST" action="/admin/deck/{{ deck.deck_id }}/disable" style="display:inline;" onsubmit="return confirm('Are you sure you want to disable this deck? It will be removed from all servers and the creator will only be able to view it.');">
+                            <button type="submit" class="btn btn-sm btn-danger">Disable</button>
+                        </form>
+                        {% endif %}
+                    </div>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p class="empty-state">No decks found on the platform.</p>
+    {% endif %}
+</div>
+{% endblock %}

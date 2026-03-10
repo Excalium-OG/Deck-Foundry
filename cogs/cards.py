@@ -1,5 +1,5 @@
 """
-DeckForge Card Commands Cog
+Deck Foundry Card Commands Cog
 Handles all card-related commands for the trading card bot
 """
 import discord
@@ -391,6 +391,7 @@ class CardCommands(commands.Cog):
         deck_id = deck['deck_id']
         
         # Get user's cards from this deck, grouped by card_id and merge_level
+        locked_list = list(getattr(self.bot, 'pvp_locked_cards', set()))
         async with self.db_pool.acquire() as conn:
             cards = await conn.fetch(
                 """SELECT c.name, c.card_id, c.rarity, uc.merge_level, COUNT(*) as count
@@ -400,10 +401,11 @@ class CardCommands(commands.Cog):
                    AND c.deck_id = $2 
                    AND uc.recycled_at IS NULL
                    AND LOWER(c.name) LIKE LOWER($3)
+                   AND NOT (uc.instance_id::text = ANY($4::text[]))
                    GROUP BY c.card_id, c.name, c.rarity, uc.merge_level
                    ORDER BY c.name, uc.merge_level
                    LIMIT 25""",
-                user_id, deck_id, f"%{current}%"
+                user_id, deck_id, f"%{current}%", locked_list
             )
         
         choices = []
@@ -495,14 +497,31 @@ class CardCommands(commands.Cog):
                 return
             
             # Check how many of this card the user owns at this merge level
+            # Fetch extra instances in case some are PvP-locked
             user_instances = await conn.fetch(
                 """SELECT instance_id FROM user_cards
                    WHERE user_id = $1 AND card_id = $2 AND merge_level = $3 AND recycled_at IS NULL
                    ORDER BY acquired_at ASC
                    LIMIT $4""",
-                user_id, card_id, merge_level, amount
+                user_id, card_id, merge_level, amount + 50
             )
-            
+
+            # Filter out PvP-locked cards
+            locked = getattr(self.bot, 'pvp_locked_cards', set())
+            unlocked_instances = [i for i in user_instances if str(i['instance_id']) not in locked]
+
+            if len(unlocked_instances) < amount:
+                if len(user_instances) >= amount:
+                    merge_display = format_merge_level_display(merge_level)
+                    card_display = f"{card_info['name']} {merge_display}".strip()
+                    await ctx.send(
+                        f"❌ Some of your **{card_display}** cards are locked in an active duel and cannot be recycled right now."
+                    )
+                    return
+                user_instances = unlocked_instances
+
+            user_instances = unlocked_instances[:amount]
+
             if len(user_instances) < amount:
                 merge_display = format_merge_level_display(merge_level)
                 card_display = f"{card_info['name']} {merge_display}".strip()

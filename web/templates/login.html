@@ -1,52 +1,13 @@
 {% extends "base.html" %}
 
-{% block title %}Login - DeckForge Admin Portal{% endblock %}
+{% block title %}Login - Deck Foundry Admin Portal{% endblock %}
 
 {% block content %}
 <style>
-  body {
-    margin: 0;
-    font-family: 'Segoe UI', sans-serif;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  }
-
-  .top-bar {
-    background-color: white;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-    color: #333;
-    padding: 1rem 2rem;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-  }
-
-  .top-bar .nav-links {
-    display: flex;
-    gap: 1.5rem;
-  }
-
-  .top-bar .nav-links a {
-    color: #667eea;
-    text-decoration: none;
-    font-weight: 600;
-  }
-
-  .top-bar .login-btn {
-    background-color: #667eea;
-    color: white;
-    border: none;
-    padding: 0.6rem 1.2rem;
-    border-radius: 8px;
-    text-decoration: none;
-    font-weight: 600;
-  }
-
   .main-container {
     display: flex;
-    padding: 2rem;
+    padding: 2rem 0;
     gap: 2rem;
-    max-width: 1200px;
-    margin: 0 auto;
   }
 
   .login-card {
@@ -71,24 +32,6 @@
     margin-top: 0;
   }
 
-  .btn-discord {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.5rem;
-    background-color: #5865F2;
-    color: white;
-    padding: 0.6rem 1.2rem;
-    border: none;
-    border-radius: 8px;
-    font-size: 1rem;
-    text-decoration: none;
-    margin-top: 1rem;
-  }
-
-  .info-section {
-    margin-top: 1.5rem;
-  }
-
   .summary-section {
     margin-top: 1.5rem;
     background-color: #f0f9ff;
@@ -106,6 +49,10 @@
     text-decoration: none;
   }
 
+  .info-section {
+    margin-top: 1.5rem;
+  }
+
   .alert {
     padding: 1rem;
     border-radius: 8px;
@@ -119,18 +66,9 @@
   }
 </style>
 
-<div class="top-bar">
-  <div class="nav-links">
-    <a href="/faq">FAQ</a>
-    <a href="/about">About</a>
-    <!-- Add more links here -->
-  </div>
-  <a href="/login" class="login-btn">Login with Discord</a>
-</div>
-
 <div class="main-container">
   <div class="login-card">
-    <h2>🚀 Welcome to DeckForge</h2>
+    <h2>🚀 Welcome to Deck Foundry</h2>
     <p>Admin Portal for Managing Collectible Card Decks</p>
 
     {% if request.query_params.get('error') == 'auth_failed' %}
@@ -140,17 +78,18 @@
     {% endif %}
 
     <div class="summary-section">
-      <h3>🧠 What is DeckForge?</h3>
-      <p>DeckForge is a customizable Discord bot platform for creating, collecting, and trading themed card decks. Whether you're into rockets, memes, fantasy, or fandoms — DeckForge lets you build your own universe.</p>
+      <h3>🧠 What is Deck Foundry?</h3>
+      <p>Deck Foundry is a customizable Discord bot platform for creating, collecting, and trading themed card decks. Whether you're into rockets, memes, fantasy, or fandoms — Deck Foundry lets you build your own universe.</p>
       <div class="invite-link">
-        🔗 <a href="https://discord.com/oauth2/authorize?client_id=1428049552484733059&permissions=277025777728&integration_type=0&scope=bot+applications.commands">Invite DeckForge to your server</a>
+        🔗 <a href="https://discord.com/oauth2/authorize?client_id=1428049552484733059&permissions=277025777728&integration_type=0&scope=bot+applications.commands">Invite Deck Foundry to your server</a>
       </div>
     </div>
 
     <div class="info-section">
       <h3>Access Requirements:</h3>
       <ul>
-        <li>You must be a server manager with permission to add bots.</li>
+        <li>Any Discord account can log in to create and manage card decks.</li>
+        <li>To assign a deck to a server, you must have Manage Server permission in that server.</li>
       </ul>
     </div>
   </div>
@@ -158,22 +97,31 @@
   <div class="update-pane">
     <h3>🛠 Patch Notes</h3>
     <ul>
-      <li><strong>Jan 18, 2026|Patch 0.2.1:</strong>
-      - Mission update. Now use /missionboard
-      - Added DM notifications
-      - Credit economy is now deck-specific
-      - Free pack cooldown is now deck-specific
-      - Added /tradeaddcredits so that players can trade using credits
+      <li><strong>Mar 9, 2026|Update 0.3.0:</strong><br>
+      - Audit logging for Deck Foundry admins<br>
+      - Logging in no longer requires the user to be an administrator in a discord server<br>
+      - Web interface and navigation updated<br>
+      - Added terms of use<br>
+      - Card templates in decks are now editable after initial creation<br>
+      - Added /shop command to display card packs and prices<br>
+      - Implemented first PvP system<br>
+      - PvP Victory Point "VP" leaderboard<br>
+      - Mission board completely rerolls daily</li>
+      <li><strong>Jan 18, 2026|Patch 0.2.1:</strong><br>
+      - Mission update. Now use /missionboard<br>
+      - Added DM notifications<br>
+      - Credit economy is now deck-specific<br>
+      - Free pack cooldown is now deck-specific<br>
+      - Added /tradeaddcredits so that players can trade using credits<br>
       - /cardinfo command changed: it now references cards in your inventory and displays info for merged cards.</li>
-      <li><strong>Dec 9, 2025:</strong>
-      - Added Card activities: Missions
+      <li><strong>Dec 9, 2025:</strong><br>
+      - Added Card activities: Missions<br>
       - Fixed duplicate deck generation when adopting decks</li>
-      <li><strong>Nov 18, 2025:</strong>
-      
-      - Mergeable cards
-      - More user-friendly card recycling
-      - Slash commands are fixed
-      - Web portal update
+      <li><strong>Nov 18, 2025:</strong><br>
+      - Mergeable cards<br>
+      - More user-friendly card recycling<br>
+      - Slash commands are fixed<br>
+      - Web portal update<br>
       - Deck Marketplace has deck previews </li>
       <li><strong>Oct 29, 2025:</strong> Deck adoption now links to global inventory</li>
       <li><strong>Oct 27, 2025:</strong> Added rarity editor to web portal</li>

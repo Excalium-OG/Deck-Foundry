@@ -1,5 +1,5 @@
 """
-DeckForge - Discord Trading Card Bot
+Deck Foundry - Discord Trading Card Bot
 Main bot file with database connection pooling and cog loading
 """
 import discord
@@ -14,7 +14,7 @@ import asyncio
 load_dotenv()
 
 # Bot configuration
-DISCORD_TOKEN = os.getenv('DECKFORGE_BOT_TOKEN')
+DISCORD_TOKEN = os.getenv('DECKFOUNDRY_BOT_TOKEN')
 DATABASE_URL = os.getenv('DATABASE_URL')
 COMMAND_PREFIX = '!'
 
@@ -25,7 +25,7 @@ if admin_ids_env:
     ADMIN_IDS = [int(id.strip()) for id in admin_ids_env.split(',') if id.strip()]
 
 
-class DeckForgeBot(commands.Bot):
+class DeckFoundryBot(commands.Bot):
     """Custom bot class with database pool and slash command support"""
     
     def __init__(self):
@@ -42,6 +42,7 @@ class DeckForgeBot(commands.Bot):
         
         self.db_pool = None
         self.admin_ids = ADMIN_IDS
+        self.pvp_locked_cards: set[str] = set()
     
     async def setup_hook(self):
         """Setup database and load cogs"""
@@ -67,6 +68,7 @@ class DeckForgeBot(commands.Bot):
         await self.load_extension('cogs.missions')  # Mission system
         await self.load_extension('cogs.future')
         await self.load_extension('cogs.slash_commands')  # Slash command support
+        await self.load_extension('cogs.pvp')             # PvP duel system
         print("✅ Loaded all cogs")
     
     async def run_migrations(self):
@@ -89,7 +91,11 @@ class DeckForgeBot(commands.Bot):
             'db/migrations/0015_player_deck_state.sql',
             'db/migrations/0016_user_inventory.sql',
             'db/migrations/0017_trade_credits.sql',
-            'db/migrations/0018_mission_points.sql'
+            'db/migrations/0018_mission_points.sql',
+            'db/migrations/0019_admin_audit.sql',
+            'db/migrations/0020_terms_acceptance.sql',
+            'db/migrations/0021_pvp.sql',
+            'db/migrations/0022_mission_card_attribute_optional.sql',
         ]
         
         async with self.db_pool.acquire() as conn:
@@ -115,7 +121,7 @@ class DeckForgeBot(commands.Bot):
         except Exception as e:
             print(f"⚠️ Failed to sync slash commands: {e}")
         
-        print(f"🚀 DeckForge bot is ready!")
+        print(f"🚀 Deck Foundry bot is ready!")
         print(f"   Logged in as: {self.user.name} ({self.user.id})")
         print(f"   Command prefix: {COMMAND_PREFIX} (legacy)")
         print(f"   Slash commands: Enabled")
@@ -185,12 +191,12 @@ async def main():
     """Main entry point"""
     # Check for Discord token
     if not DISCORD_TOKEN:
-        print("❌ ERROR: DECKFORGE_BOT_TOKEN not found in environment variables!")
+        print("❌ ERROR: DECKFOUNDRY_BOT_TOKEN not found in environment variables!")
         print("Please set up your Discord bot token:")
         print("1. Go to https://discord.com/developers/applications")
         print("2. Create a new application or select existing one")
         print("3. Go to 'Bot' section and copy the token")
-        print("4. Add DECKFORGE_BOT_TOKEN to your environment variables or .env file")
+        print("4. Add DECKFOUNDRY_BOT_TOKEN to your environment variables or .env file")
         return
     
     if not DATABASE_URL:
@@ -198,7 +204,7 @@ async def main():
         return
     
     # Create and run bot
-    bot = DeckForgeBot()
+    bot = DeckFoundryBot()
     
     try:
         await bot.start(DISCORD_TOKEN)
