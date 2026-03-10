@@ -66,12 +66,15 @@ class MissionCommands(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.db_pool: asyncpg.Pool = bot.db_pool
+        self._last_daily_reroll = None
         self.backlog_refill_loop.start()
         self.mission_lifecycle_loop.start()
+        self.daily_reroll_loop.start()
 
     def cog_unload(self):
         self.backlog_refill_loop.cancel()
         self.mission_lifecycle_loop.cancel()
+        self.daily_reroll_loop.cancel()
 
     @tasks.loop(minutes=5)
     async def backlog_refill_loop(self):
@@ -98,6 +101,49 @@ class MissionCommands(commands.Cog):
     @mission_lifecycle_loop.before_loop
     async def before_lifecycle_check(self):
         await self.bot.wait_until_ready()
+
+    @tasks.loop(hours=1)
+    async def daily_reroll_loop(self):
+        """Full mission board reroll once per day at midnight UTC"""
+        try:
+            now = datetime.now(timezone.utc)
+            today = now.date()
+            if now.hour == 0 and self._last_daily_reroll != today:
+                self._last_daily_reroll = today
+                await self.reroll_all_mission_boards()
+                print(f"Daily mission reroll completed at {now.strftime('%Y-%m-%d %H:%M')} UTC")
+        except Exception as e:
+            print(f"Daily reroll loop error: {e}")
+
+    @daily_reroll_loop.before_loop
+    async def before_daily_reroll(self):
+        await self.bot.wait_until_ready()
+
+    async def reroll_all_mission_boards(self):
+        """Clear and regenerate all mission board slots for decks with active templates"""
+        async with self.db_pool.acquire() as conn:
+            decks = await conn.fetch(
+                """SELECT DISTINCT d.deck_id FROM decks d
+                   JOIN mission_templates mt ON d.deck_id = mt.deck_id
+                   WHERE mt.is_active = TRUE"""
+            )
+            count = 0
+            for deck in decks:
+                deck_id = deck['deck_id']
+                templates = await conn.fetch(
+                    """SELECT * FROM mission_templates WHERE deck_id = $1 AND is_active = TRUE""",
+                    deck_id
+                )
+                if not templates:
+                    continue
+                await conn.execute(
+                    "DELETE FROM mission_board_slots WHERE deck_id = $1",
+                    deck_id
+                )
+                for position in range(1, BOARD_TOTAL_SLOTS + 1):
+                    await self.generate_mission_slot(conn, deck_id, position, templates)
+                count += 1
+            return count
 
     async def refill_all_mission_boards(self):
         """Refill all deck mission boards to 10 slots"""
@@ -1252,6 +1298,16 @@ class MissionCommands(commands.Cog):
                         print(f"Failed to send monthly reward DM: {e}")
                 
                 print(f"Processed monthly reset for deck {deck['name']} ({deck_id})")
+
+    @commands.command(name='rerollmissions')
+    async def reroll_missions_admin(self, ctx):
+        """[ADMIN] Force an immediate mission board reroll for all active decks"""
+        admin_ids = getattr(self.bot, 'admin_ids', [])
+        if ctx.author.id not in admin_ids and ctx.author.id != self.bot.owner_id:
+            return
+        msg = await ctx.send("⏳ Rerolling mission boards for all active decks...")
+        count = await self.reroll_all_mission_boards()
+        await msg.edit(content=f"✅ Mission boards rerolled for **{count}** deck(s).")
 
 
 async def setup(bot):
