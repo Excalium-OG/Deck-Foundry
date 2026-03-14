@@ -285,8 +285,16 @@ class SlashCommands(commands.Cog):
         """Display help information about available commands"""
         embed = discord.Embed(
             title="🚀 Deck Foundry Help",
-            description="Collect rocket-themed trading cards and build your collection!",
+            description="Drop trading cards and build your collection!",
             color=discord.Color.blue()
+        )
+
+        embed.add_field(
+            name="🖥️ Support Server",
+            value=(
+                "https://discord.gg/rUH3W7nSFC"
+            ),
+            inline=False
         )
         
         embed.add_field(
@@ -303,8 +311,8 @@ class SlashCommands(commands.Cog):
             name="🎴 Collection Commands",
             value=(
                 "`/mycards [page]` - View your card collection\n"
-                "`/cardinfo` - View detailed info about a card (with autocomplete)\n"
-                "`/recycle` - Convert duplicate cards into credits"
+                "`/inventory` - View your card packs and items\n"
+                "`/cardinfo` - View detailed info about a card (with autocomplete)"
             ),
             inline=False
         )
@@ -313,7 +321,7 @@ class SlashCommands(commands.Cog):
             name="💰 Economy Commands",
             value=(
                 "`/balance` - Check your credit balance\n"
-                "`/buycredits` - Info about purchasing credits"
+                "`/recycle` - Convert duplicate cards into credits"
             ),
             inline=False
         )
@@ -322,10 +330,28 @@ class SlashCommands(commands.Cog):
             name="🔄 Trading Commands",
             value=(
                 "`/requesttrade @user` - Start a trade with another player\n"
-                "`/tradeadd [instance_id]` - Add a card to active trade\n"
-                "`/traderemove [instance_id]` - Remove a card from trade\n"
+                "`/tradeadd [card_name]` - Add a card or credits to active trade\n"
+                "`/traderemove [card_name]` - Remove a card from trade\n"
                 "`/accepttrade` - Accept the current trade offer\n"
                 "`/finalize` - Complete and finalize the trade"
+            ),
+            inline=False
+        )
+
+        embed.add_field(
+            name="📄 Mission Commands (If enabled)",
+            value=(
+                "`/missionboard` - View the mission board\n"
+                "`/startmission [mission_name] [card_name]` - Start the selected mission with the selected card\n"
+                "`/mymissions` - View your current or pending missions"
+            ),
+            inline=False
+        )
+
+        embed.add_field(
+            name="⚔️ PvP Commands (If enabled)",
+            value=(
+                "`/duel [user]` - Challenge the @user to a duel!"
             ),
             inline=False
         )
