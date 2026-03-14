@@ -1,1 +1,58 @@
+{% extends "base.html" %}
+{% block title %}About - Deck Foundry{% endblock %}
 
+{% block content %}
+<style>
+  .terms-card {
+    background: white;
+    border-radius: 12px;
+    padding: 2.5rem;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    max-width: 860px;
+    margin: 0 auto;
+  }
+  .terms-card h1 {
+    font-size: 2rem;
+    margin-bottom: 0.5rem;
+    color: #1f2937;
+  }
+  .terms-card .last-updated {
+    color: #6b7280;
+    font-size: 0.9rem;
+    margin-bottom: 2rem;
+  }
+  .terms-card h2 {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: #1f2937;
+    margin: 1.75rem 0 0.5rem;
+  }
+  .terms-card p, .terms-card li {
+    color: #374151;
+    line-height: 1.7;
+    font-size: 0.97rem;
+  }
+  .terms-card ul {
+    margin: 0.5rem 0 0.5rem 1.5rem;
+  }
+  .terms-card ul li {
+    margin-bottom: 0.25rem;
+  }
+  hr {
+    border: none;
+    border-top: 1px solid #e5e7eb;
+    margin: 1.5rem 0;
+  }
+</style>
+
+<div class="terms-card">
+  <h1>About Deck Foundry</h1>
+  <p class="last-updated">Effective as of 2026</p>
+  <hr>
+
+  <h2>Deck Foundry is an Indie project</h2>
+  <p>This web app has been inspired by the desire to create trading card games. This is meant to be a platform on which users can express creativity and design their own trading card game ecosystem.</p>
+  <p>So far, this project has been developed by myself by using a vibe coding app. I have a general knowledge of coding so there is some I can do myself, but there is much of it that is above my head.</p>
+  
+</div>
+{% endblock %}
