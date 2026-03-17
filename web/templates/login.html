@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Login - Deck Foundry Admin Portal{% endblock %}
+{% block title %}Login - Deck Foundry{% endblock %}
 
 {% block content %}
 <style>
@@ -69,7 +69,7 @@
 <div class="main-container">
   <div class="login-card">
     <h2>🚀 Welcome to Deck Foundry</h2>
-    <p>Admin Portal for Managing Collectible Card Decks</p>
+    <p>Website for Managing Collectible Card Decks</p>
 
     {% if request.query_params.get('error') == 'auth_failed' %}
     <div class="alert alert-error">
