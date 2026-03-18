@@ -83,6 +83,14 @@
             <strong>{{ activity.reward_base }} credits</strong>
           </div>
           <div class="activity-detail">
+            <span>Accept Cost</span>
+            {% if activity.get('has_acceptance_cost', True) %}
+            <strong>{{ (activity.reward_base * activity.acceptance_cost_multiplier)|int }} credits (×{{ activity.acceptance_cost_multiplier }})</strong>
+            {% else %}
+            <strong>Free</strong>
+            {% endif %}
+          </div>
+          <div class="activity-detail">
             <span>Duration</span>
             <strong>{{ activity.duration_base_hours }} hours</strong>
           </div>

@@ -1719,6 +1719,8 @@ async def create_card_activity(
     require_card_attribute: Optional[str] = Form(None),
     requirement_field: Optional[str] = Form(None),
     min_value_base: float = Form(0.0),
+    has_acceptance_cost: Optional[str] = Form(None),
+    acceptance_cost_multiplier: float = Form(0.05),
     reward_base: int = Form(...),
     duration_base_hours: int = Form(48),
     variance_pct: float = Form(5.0),
@@ -1751,13 +1753,18 @@ async def create_card_activity(
             requirement_field = None
             min_value_base = 0.0
 
+        has_cost = has_acceptance_cost == "1"
+        if not has_cost:
+            acceptance_cost_multiplier = 0.05
+
         async with conn.transaction():
             result = await conn.fetchrow(
                 """INSERT INTO mission_templates 
                    (deck_id, name, activity_type, description, require_card_attribute,
-                    requirement_field, min_value_base, reward_base, duration_base_hours,
+                    requirement_field, min_value_base, has_acceptance_cost,
+                    acceptance_cost_multiplier, reward_base, duration_base_hours,
                     variance_pct, is_active, created_by)
-                   VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+                   VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
                    RETURNING mission_template_id""",
                 deck_id,
                 name,
@@ -1766,6 +1773,8 @@ async def create_card_activity(
                 req_attr,
                 requirement_field,
                 min_value_base,
+                has_cost,
+                acceptance_cost_multiplier,
                 reward_base,
                 duration_base_hours,
                 variance_pct,
@@ -1876,6 +1885,8 @@ async def update_card_activity(
     require_card_attribute: Optional[str] = Form(None),
     requirement_field: Optional[str] = Form(None),
     min_value_base: float = Form(0.0),
+    has_acceptance_cost: Optional[str] = Form(None),
+    acceptance_cost_multiplier: float = Form(0.05),
     reward_base: int = Form(...),
     duration_base_hours: int = Form(48),
     variance_pct: float = Form(5.0),
@@ -1917,20 +1928,28 @@ async def update_card_activity(
             requirement_field = None
             min_value_base = 0.0
 
+        has_cost = has_acceptance_cost == "1"
+        if not has_cost:
+            acceptance_cost_multiplier = 0.05
+
         async with conn.transaction():
             await conn.execute(
                 """UPDATE mission_templates 
                    SET name = $1, activity_type = $2, description = $3,
                        require_card_attribute = $4, requirement_field = $5,
-                       min_value_base = $6, reward_base = $7, duration_base_hours = $8, 
-                       variance_pct = $9, is_active = $10, updated_at = NOW()
-                   WHERE mission_template_id = $11""",
+                       min_value_base = $6, has_acceptance_cost = $7,
+                       acceptance_cost_multiplier = $8, reward_base = $9,
+                       duration_base_hours = $10, variance_pct = $11,
+                       is_active = $12, updated_at = NOW()
+                   WHERE mission_template_id = $13""",
                 name,
                 activity_type,
                 description,
                 req_attr,
                 requirement_field,
                 min_value_base,
+                has_cost,
+                acceptance_cost_multiplier,
                 reward_base,
                 duration_base_hours,
                 variance_pct,

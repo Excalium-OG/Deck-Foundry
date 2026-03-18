@@ -269,7 +269,8 @@ class MissionCommands(commands.Cog):
             
             missions = await conn.fetch(
                 """SELECT mbs.*, mt.name as template_name, mt.description,
-                          mt.requirement_field, mt.require_card_attribute
+                          mt.requirement_field, mt.require_card_attribute,
+                          mt.has_acceptance_cost, mt.acceptance_cost_multiplier
                    FROM mission_board_slots mbs
                    JOIN mission_templates mt ON mbs.mission_template_id = mt.mission_template_id
                    WHERE mbs.deck_id = $1 AND mbs.slot_position <= $2
@@ -311,18 +312,21 @@ class MissionCommands(commands.Cog):
                 color_indicator = {'Common': '⚪', 'Uncommon': '🟢', 'Exceptional': '🔵', 
                                    'Rare': '🟣', 'Epic': '💜', 'Legendary': '🟠', 'Mythic': '🔴'}
                 
-                acceptance_cost = int(mission['reward_rolled'] * 0.05)
-                
+                has_cost = mission.get('has_acceptance_cost', True)
+                cost_mult = mission.get('acceptance_cost_multiplier', 0.05)
+                acceptance_cost = int(mission['reward_rolled'] * cost_mult) if has_cost else 0
+
                 if mission.get('require_card_attribute', True) and mission['requirement_field']:
                     req_line = f"📋 {mission['requirement_field']} >= {mission['requirement_rolled']:,.0f}\n"
                 else:
                     req_line = "📋 Any card accepted\n"
+                cost_line = f"🎫 Cost: {acceptance_cost} credits" if has_cost else "🎫 Cost: Free"
                 field_value = (
                     f"{color_indicator.get(rarity, '⚪')} **{rarity}**\n"
                     f"{req_line}"
                     f"💰 Reward: {mission['reward_rolled']:,} credits\n"
                     f"⏱️ Duration: {mission['duration_rolled_hours']}h\n"
-                    f"🎫 Cost: {acceptance_cost} credits"
+                    f"{cost_line}"
                 )
                 
                 embed.add_field(
@@ -397,7 +401,8 @@ class MissionCommands(commands.Cog):
             
             missions = await conn.fetch(
                 """SELECT mbs.*, mt.name as template_name,
-                          mt.requirement_field, mt.require_card_attribute
+                          mt.requirement_field, mt.require_card_attribute,
+                          mt.has_acceptance_cost, mt.acceptance_cost_multiplier
                    FROM mission_board_slots mbs
                    JOIN mission_templates mt ON mbs.mission_template_id = mt.mission_template_id
                    WHERE mbs.deck_id = $1 AND mbs.slot_position <= $2
@@ -409,29 +414,32 @@ class MissionCommands(commands.Cog):
                 return
             
             mission = missions[slot_index]
-            
-            # Get player's deck-specific credits
-            state = await get_player_deck_state(conn, payload.user_id, deck_id)
-            current_credits = state['credits']
-            
-            acceptance_cost = int(mission['reward_rolled'] * 0.05)
-            
-            if current_credits < acceptance_cost:
-                try:
-                    user = self.bot.get_user(payload.user_id)
-                    if user:
-                        await user.send(
-                            f"❌ **Unable to Accept Mission**\n"
-                            f"You need **{acceptance_cost}** credits to accept this mission, "
-                            f"but you only have **{current_credits}** credits."
-                        )
-                    channel = self.bot.get_channel(payload.channel_id)
-                    if channel:
-                        message = await channel.fetch_message(payload.message_id)
-                        await message.remove_reaction(emoji_str, discord.Object(id=payload.user_id))
-                except:
-                    pass
-                return
+
+            has_cost = mission.get('has_acceptance_cost', True)
+            cost_mult = mission.get('acceptance_cost_multiplier', 0.05)
+            acceptance_cost = int(mission['reward_rolled'] * cost_mult) if has_cost else 0
+
+            if has_cost and acceptance_cost > 0:
+                # Get player's deck-specific credits
+                state = await get_player_deck_state(conn, payload.user_id, deck_id)
+                current_credits = state['credits']
+
+                if current_credits < acceptance_cost:
+                    try:
+                        user = self.bot.get_user(payload.user_id)
+                        if user:
+                            await user.send(
+                                f"❌ **Unable to Accept Mission**\n"
+                                f"You need **{acceptance_cost}** credits to accept this mission, "
+                                f"but you only have **{current_credits}** credits."
+                            )
+                        channel = self.bot.get_channel(payload.channel_id)
+                        if channel:
+                            message = await channel.fetch_message(payload.message_id)
+                            await message.remove_reaction(emoji_str, discord.Object(id=payload.user_id))
+                    except:
+                        pass
+                    return
             
             if mission.get('require_card_attribute', True) and mission['requirement_field']:
                 try:
@@ -530,9 +538,10 @@ class MissionCommands(commands.Cog):
             try:
                 user = await self.bot.fetch_user(payload.user_id)
                 if user:
+                    cost_line = f"💰 **Cost:** {acceptance_cost} credits deducted\n" if acceptance_cost > 0 else "💰 **Cost:** Free\n"
                     await user.send(
                         f"✅ **Mission Accepted!** {mission['template_name']} [{mission['rarity_rolled']}]\n\n"
-                        f"💰 **Cost:** {acceptance_cost} credits deducted\n"
+                        f"{cost_line}"
                         f"📋 **Next Step:** Use `/startmission` within 24 hours to begin!\n"
                         f"⏱️ **Mission Duration:** {mission['duration_rolled_hours']} hours\n\n"
                         f"📊 **Your Missions:** {player_missions + 1}/{MAX_PLAYER_MISSIONS}"

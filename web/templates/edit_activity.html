@@ -114,6 +114,25 @@
           </div>
         </div>
       </div>
+      <div class="df-form-group">
+        <div class="checkbox-group">
+          <input type="checkbox" id="has_acceptance_cost" name="has_acceptance_cost" value="1"
+                 onchange="toggleAcceptanceCost(this.checked)"
+                 {% if not activity or activity.get('has_acceptance_cost', True) %}checked{% endif %}>
+          <label for="has_acceptance_cost" style="margin-bottom:0;font-weight:600;color:#374151;">Mission Cost Requirement</label>
+        </div>
+        <small>When enabled, players must pay credits to accept this mission</small>
+      </div>
+      <div id="acceptance-cost-fields" {% if activity and not activity.get('has_acceptance_cost', True) %}style="display:none;"{% endif %}>
+        <div class="df-form-group">
+          <label for="acceptance_cost_multiplier">Cost Multiplier</label>
+          <input type="number" id="acceptance_cost_multiplier" name="acceptance_cost_multiplier"
+                 step="0.001" min="0.001" max="10.0"
+                 value="{{ activity.acceptance_cost_multiplier if activity and activity.get('has_acceptance_cost', True) else '0.05' }}"
+                 placeholder="0.05">
+          <small>Acceptance cost = Reward × Multiplier. Default 0.05 charges 5% of the reward. A value of 0.1 charges 10%, etc.</small>
+        </div>
+      </div>
       <div class="df-form-row">
         <div class="df-form-group">
           <label for="reward_base">Reward Credits (Mythic) *</label>
@@ -197,6 +216,9 @@
 <script>
 function toggleAttrRequirement(enabled) {
   document.getElementById('attr-requirement-fields').style.display = enabled ? '' : 'none';
+}
+function toggleAcceptanceCost(enabled) {
+  document.getElementById('acceptance-cost-fields').style.display = enabled ? '' : 'none';
 }
 </script>
 {% endblock %}
