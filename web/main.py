@@ -4,7 +4,7 @@ import asyncio
 import asyncpg
 import secrets
 from fastapi import FastAPI, Request, Depends, HTTPException, Form, Response
-from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from authlib.integrations.starlette_client import OAuth
 from starlette.middleware.sessions import SessionMiddleware
@@ -201,6 +201,18 @@ async def shutdown():
         await db_pool.close()
 
 
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    """Redirect browsers to login on 401; return JSON for API/non-HTML requests."""
+    accept = request.headers.get("accept", "")
+    if exc.status_code == 401 and "text/html" in accept:
+        return RedirectResponse(url="/login", status_code=302)
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"detail": exc.detail},
+    )
+
+
 # Routes
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request):
@@ -214,7 +226,15 @@ async def home(request: Request):
 @app.get("/about", response_class=HTMLResponse)
 async def about(request: Request):
     """About page"""
-    return templates.TemplateResponse("about.html", {"request": request})
+    user = await get_current_user(request)
+    return templates.TemplateResponse(
+        "about.html",
+        {
+            "request": request,
+            "user": user,
+            "is_global_admin": is_global_admin(user["id"]) if user else False,
+        },
+    )
 
 
 @app.get("/terms", response_class=HTMLResponse)
