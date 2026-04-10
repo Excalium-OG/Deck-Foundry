@@ -11,7 +11,7 @@ from starlette.middleware.sessions import SessionMiddleware
 import httpx
 from typing import Optional, Dict, List
 from datetime import datetime, timedelta
-from web.object_storage import ObjectStorageService
+from object_storage import ObjectStorageService
 from fastapi.staticfiles import StaticFiles as BaseStaticFiles
 
 # Initialize FastAPI app
