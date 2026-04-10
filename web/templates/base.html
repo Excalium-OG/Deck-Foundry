@@ -22,7 +22,7 @@
             z-index: 100;
         }
         .nav-container {
-            max-width: 1200px;
+            max-width: 1440px;
             margin: 0 auto;
             padding: 0 2rem;
             display: flex;
@@ -97,7 +97,7 @@
             background: rgba(255,255,255,0.9);
         }
         .container {
-            max-width: 1200px;
+            max-width: 1440px;
             margin: 2rem auto;
             padding: 0 2rem;
             min-height: calc(100vh - 200px);
@@ -112,6 +112,8 @@
                 {% if user %}
                 <a href="/dashboard" class="nav-link">Dashboard</a>
                 <a href="/marketplace" class="nav-link">Marketplace</a>
+                <a href="/faq" class="nav-link">FAQ</a>
+                <a href="/about" class="nav-link">About</a>
                 {% if is_global_admin is defined and is_global_admin %}
                 <a href="/admin" class="nav-link">Administration</a>
                 {% endif %}

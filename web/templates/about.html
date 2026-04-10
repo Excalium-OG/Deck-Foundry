@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% block title %}About - Deck Foundry{% endblock %}
+
+{% block content %}
+<style>
+  .about-card {
+    background: white;
+    border-radius: 12px;
+    padding: 2.5rem;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    max-width: 1440px;
+    margin: 0 auto;
+  }
+  .about-card h1 {
+    font-size: 2rem;
+    margin-bottom: 0.5rem;
+    color: #1f2937;
+  }
+  .about-card .last-updated {
+    color: #6b7280;
+    font-size: 0.9rem;
+    margin-bottom: 2rem;
+  }
+  .about-card h2 {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: #1f2937;
+    margin: 1.75rem 0 0.5rem;
+  }
+  .about-card p, .about-card li {
+    color: #374151;
+    line-height: 1.7;
+    font-size: 0.97rem;
+  }
+  .about-card ul {
+    margin: 0.5rem 0 0.5rem 1.5rem;
+  }
+  .about-card ul li {
+    margin-bottom: 0.25rem;
+  }
+  hr {
+    border: none;
+    border-top: 1px solid #e5e7eb;
+    margin: 1.5rem 0;
+  }
+</style>
+
+<div class="about-card">
+  <h1>About Deck Foundry</h1>
+  <p class="last-updated">Effective as of 2026</p>
+  <hr>
+
+  <h2>Vision</h2>
+  <p>This web app has been inspired by the desire to create trading card games. This is meant to be a platform on which users can express creativity and design their own trading card game ecosystem.</p>
+  <p>The long term goal is for this to be flexible and feature-rich platform on which creators can make a trading card universe as complex or straight-forward as they wish. Discord is great place for a trading card system to reside, and I believe we can provide much more than other trading card bots out there.</p>
+
+  <h2>How it works</h2>
+  <p>It all starts at deck creation, then creators add cards one-by-one.</p>
+  <ul>
+    <li>Create and edit the card template(s) for your deck. Define attributes, rarity, name, card image, etc.</li>
+    <li>Create merge perks, card missions, and set card drop rates.</li>
+    <li>Publish your deck to the public marketplace for other users to adopt and use in their server.</li>
+    <li>All servers using the same trading card deck share the same ecosystem for all users. This means global intentory and currency between Discord servers.</li>
+    <li>Notifications regarding a TCG deck are sent to a user's direct message inbox.</li>
+  </ul>
+  
+  <h2>Deck Foundry is an Indie project</h2>
+  <p>So far, this project has been developed by myself by using a vibe coding app. I have a general knowledge of coding so there is some that I can do myself, but there is much of it that is above my head. Currently, this project is financially supported by myself and a friend.</p>
+
+  <h2>Monetization Philosophy</h2>
+  <p>Monetization is planned, however I do not want to employ predatory tactics when it comes to microtransactions. I want Deck Foundry to have long-term sustainability without taking users for granted. Support from users is greatly appreciated. The least I can do is be fair, transparent, and put Deck Foundry users first. I also would like users to benefit from their creativity. I'm exploring ways for users to monetize what they build on Deck Foundry without creating unfair advantages for players.</p>
+
+  <h2>Development Status and Future Plans</h2>
+  <p>I continue to develop this with my free time. My free time fluctuates, and I do not have a set development schedule but I wish to continue at a reasonable rate that will keep users engaged.</p>
+  <p>The plan for Deck Foundry at this time is to continue adding features and improvements on a case-by-case basis, determined by priority. Major bugs and issues are first priority, new features are second priority, and minor issues are third priority.</p>
+  <p>Planned features:</p>
+  <ul>
+    <li>Advanced PvP system</li>
+    <li>Tournament system</li>
+    <li>Limited events system</li>
+    <li>Card image template editor for deck creators</li>
+    <li>Deck editor improvements</li>
+    <li>Deck marketplace enhancements</li>
+  </ul>
+  
+  <h2>Support Deck Foundry</h2>
+  <p>You can support Deck Foundry by joining our discord server: <a href="https://discord.gg/rUH3W7nSFC" target="_blank" rel="noopener noreferrer">
+    Join our Discord server
+  </a> </p>
+  <p>You can support with monetary donations: (donation link coming soon)</p>
+  <p>Share feedback, report bugs, and spread the word!</p>
+  
+</div>
+{% endblock %}

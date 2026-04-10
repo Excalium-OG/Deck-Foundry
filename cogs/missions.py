@@ -235,6 +235,60 @@ class MissionCommands(commands.Cog):
             selected_rarity, requirement_rolled, reward_rolled, duration_rolled
         )
 
+    async def _fetch_board_missions(self, conn, deck_id: int):
+        """Fetch the current visible mission board slots with template info."""
+        return await conn.fetch(
+            """SELECT mbs.*, mt.name as template_name, mt.description,
+                      mt.requirement_field, mt.require_card_attribute,
+                      mt.has_acceptance_cost, mt.acceptance_cost_multiplier
+               FROM mission_board_slots mbs
+               JOIN mission_templates mt ON mbs.mission_template_id = mt.mission_template_id
+               WHERE mbs.deck_id = $1 AND mbs.slot_position <= $2
+               ORDER BY mbs.slot_position""",
+            deck_id, BOARD_VISIBLE_SLOTS
+        )
+
+    def _build_board_embed(self, deck_name: str, deck_id: int, missions, player_missions: int) -> discord.Embed:
+        """Build a mission board embed from a list of current board slots."""
+        embed = discord.Embed(
+            title=f"🎯 Mission Board - {deck_name}",
+            description=f"React with 1️⃣ 2️⃣ 3️⃣ to accept a mission!\n\n"
+                       f"**Your Mission Slots:** {player_missions}/{MAX_PLAYER_MISSIONS} used",
+            color=0x667EEA
+        )
+        color_indicator = {
+            'Common': '⚪', 'Uncommon': '🟢', 'Exceptional': '🔵',
+            'Rare': '🟣', 'Epic': '💜', 'Legendary': '🟠', 'Mythic': '🔴'
+        }
+        for i, mission in enumerate(missions):
+            if i >= 3:
+                break
+            emoji = SLOT_EMOJIS[i]
+            rarity = mission['rarity_rolled']
+            has_cost = mission.get('has_acceptance_cost', True)
+            cost_mult = mission.get('acceptance_cost_multiplier', 0.05)
+            acceptance_cost = int(mission['reward_rolled'] * cost_mult) if has_cost else 0
+            if mission.get('require_card_attribute', True) and mission['requirement_field']:
+                req_line = f"📋 {mission['requirement_field']} >= {mission['requirement_rolled']:,.0f}\n"
+            else:
+                req_line = "📋 Any card accepted\n"
+            cost_line = f"🎫 Cost: {acceptance_cost} credits" if has_cost else "🎫 Cost: Free"
+            field_value = (
+                f"{color_indicator.get(rarity, '⚪')} **{rarity}**\n"
+                f"{req_line}"
+                f"💰 Reward: {mission['reward_rolled']:,} credits\n"
+                f"⏱️ Duration: {mission['duration_rolled_hours']}h\n"
+                f"{cost_line}"
+            )
+            embed.add_field(
+                name=f"{emoji} {mission['template_name']}",
+                value=field_value,
+                inline=True
+            )
+        embed.set_footer(text=f"Missions refresh every 30 minutes | Slot ID: {deck_id}")
+        embed.timestamp = datetime.now(timezone.utc)
+        return embed
+
     @commands.hybrid_command(name='missionboard', description="View the mission board for this server's deck")
     async def mission_board(self, ctx):
         """Display the mission board with 3 available missions"""
@@ -267,15 +321,7 @@ class MissionCommands(commands.Cog):
                 if templates:
                     await self.refill_mission_board(conn, deck_id)
             
-            missions = await conn.fetch(
-                """SELECT mbs.*, mt.name as template_name, mt.description,
-                          mt.requirement_field, mt.require_card_attribute
-                   FROM mission_board_slots mbs
-                   JOIN mission_templates mt ON mbs.mission_template_id = mt.mission_template_id
-                   WHERE mbs.deck_id = $1 AND mbs.slot_position <= $2
-                   ORDER BY mbs.slot_position""",
-                deck_id, BOARD_VISIBLE_SLOTS
-            )
+            missions = await self._fetch_board_missions(conn, deck_id)
             
             if not missions:
                 templates = await conn.fetch(
@@ -293,47 +339,8 @@ class MissionCommands(commands.Cog):
                    WHERE accepted_by = $1 AND status IN ('pending', 'active')""",
                 ctx.author.id
             )
-            slots_available = MAX_PLAYER_MISSIONS - player_missions
             
-            embed = discord.Embed(
-                title=f"🎯 Mission Board - {deck['name']}",
-                description=f"React with 1️⃣ 2️⃣ 3️⃣ to accept a mission!\n\n"
-                           f"**Your Mission Slots:** {player_missions}/{MAX_PLAYER_MISSIONS} used",
-                color=0x667EEA
-            )
-            
-            for i, mission in enumerate(missions):
-                if i >= 3:
-                    break
-                    
-                emoji = SLOT_EMOJIS[i]
-                rarity = mission['rarity_rolled']
-                color_indicator = {'Common': '⚪', 'Uncommon': '🟢', 'Exceptional': '🔵', 
-                                   'Rare': '🟣', 'Epic': '💜', 'Legendary': '🟠', 'Mythic': '🔴'}
-                
-                acceptance_cost = int(mission['reward_rolled'] * 0.05)
-                
-                if mission.get('require_card_attribute', True) and mission['requirement_field']:
-                    req_line = f"📋 {mission['requirement_field']} >= {mission['requirement_rolled']:,.0f}\n"
-                else:
-                    req_line = "📋 Any card accepted\n"
-                field_value = (
-                    f"{color_indicator.get(rarity, '⚪')} **{rarity}**\n"
-                    f"{req_line}"
-                    f"💰 Reward: {mission['reward_rolled']:,} credits\n"
-                    f"⏱️ Duration: {mission['duration_rolled_hours']}h\n"
-                    f"🎫 Cost: {acceptance_cost} credits"
-                )
-                
-                embed.add_field(
-                    name=f"{emoji} {mission['template_name']}",
-                    value=field_value,
-                    inline=True
-                )
-            
-            embed.set_footer(text=f"Missions refresh every 30 minutes | Slot ID: {deck_id}")
-            embed.timestamp = datetime.now(timezone.utc)
-            
+            embed = self._build_board_embed(deck['name'], deck_id, missions, player_missions)
             message = await ctx.send(embed=embed)
             
             for i in range(min(len(missions), 3)):
@@ -395,43 +402,38 @@ class MissionCommands(commands.Cog):
                     pass
                 return
             
-            missions = await conn.fetch(
-                """SELECT mbs.*, mt.name as template_name,
-                          mt.requirement_field, mt.require_card_attribute
-                   FROM mission_board_slots mbs
-                   JOIN mission_templates mt ON mbs.mission_template_id = mt.mission_template_id
-                   WHERE mbs.deck_id = $1 AND mbs.slot_position <= $2
-                   ORDER BY mbs.slot_position""",
-                deck_id, BOARD_VISIBLE_SLOTS
-            )
+            missions = await self._fetch_board_missions(conn, deck_id)
             
             if slot_index >= len(missions):
                 return
             
             mission = missions[slot_index]
-            
-            # Get player's deck-specific credits
-            state = await get_player_deck_state(conn, payload.user_id, deck_id)
-            current_credits = state['credits']
-            
-            acceptance_cost = int(mission['reward_rolled'] * 0.05)
-            
-            if current_credits < acceptance_cost:
-                try:
-                    user = self.bot.get_user(payload.user_id)
-                    if user:
-                        await user.send(
-                            f"❌ **Unable to Accept Mission**\n"
-                            f"You need **{acceptance_cost}** credits to accept this mission, "
-                            f"but you only have **{current_credits}** credits."
-                        )
-                    channel = self.bot.get_channel(payload.channel_id)
-                    if channel:
-                        message = await channel.fetch_message(payload.message_id)
-                        await message.remove_reaction(emoji_str, discord.Object(id=payload.user_id))
-                except:
-                    pass
-                return
+
+            has_cost = mission.get('has_acceptance_cost', True)
+            cost_mult = mission.get('acceptance_cost_multiplier', 0.05)
+            acceptance_cost = int(mission['reward_rolled'] * cost_mult) if has_cost else 0
+
+            if has_cost and acceptance_cost > 0:
+                # Get player's deck-specific credits
+                state = await get_player_deck_state(conn, payload.user_id, deck_id)
+                current_credits = state['credits']
+
+                if current_credits < acceptance_cost:
+                    try:
+                        user = self.bot.get_user(payload.user_id)
+                        if user:
+                            await user.send(
+                                f"❌ **Unable to Accept Mission**\n"
+                                f"You need **{acceptance_cost}** credits to accept this mission, "
+                                f"but you only have **{current_credits}** credits."
+                            )
+                        channel = self.bot.get_channel(payload.channel_id)
+                        if channel:
+                            message = await channel.fetch_message(payload.message_id)
+                            await message.remove_reaction(emoji_str, discord.Object(id=payload.user_id))
+                    except:
+                        pass
+                    return
             
             if mission.get('require_card_attribute', True) and mission['requirement_field']:
                 try:
@@ -530,9 +532,10 @@ class MissionCommands(commands.Cog):
             try:
                 user = await self.bot.fetch_user(payload.user_id)
                 if user:
+                    cost_line = f"💰 **Cost:** {acceptance_cost} credits deducted\n" if acceptance_cost > 0 else "💰 **Cost:** Free\n"
                     await user.send(
                         f"✅ **Mission Accepted!** {mission['template_name']} [{mission['rarity_rolled']}]\n\n"
-                        f"💰 **Cost:** {acceptance_cost} credits deducted\n"
+                        f"{cost_line}"
                         f"📋 **Next Step:** Use `/startmission` within 24 hours to begin!\n"
                         f"⏱️ **Mission Duration:** {mission['duration_rolled_hours']} hours\n\n"
                         f"📊 **Your Missions:** {player_missions + 1}/{MAX_PLAYER_MISSIONS}"
@@ -545,6 +548,23 @@ class MissionCommands(commands.Cog):
                 if channel:
                     message = await channel.fetch_message(payload.message_id)
                     await message.remove_reaction(emoji_str, discord.Object(id=payload.user_id))
+
+                    async with self.db_pool.acquire() as edit_conn:
+                        updated_missions = await self._fetch_board_missions(edit_conn, deck_id)
+                        deck_row = await edit_conn.fetchrow(
+                            "SELECT name FROM decks WHERE deck_id = $1", deck_id
+                        )
+                        updated_player_missions = await edit_conn.fetchval(
+                            """SELECT COUNT(*) FROM active_missions
+                               WHERE accepted_by = $1 AND status IN ('pending', 'active')""",
+                            payload.user_id
+                        )
+                    if updated_missions and deck_row:
+                        updated_embed = self._build_board_embed(
+                            deck_row['name'], deck_id,
+                            updated_missions, updated_player_missions
+                        )
+                        await message.edit(embed=updated_embed)
             except:
                 pass
 

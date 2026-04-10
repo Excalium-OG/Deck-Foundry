@@ -71,6 +71,10 @@ class MergeCommands(commands.Cog):
                   AND uc.recycled_at IS NULL
                   AND c.mergeable = TRUE
                   AND NOT (uc.instance_id::text = ANY($3::text[]))
+                  AND uc.instance_id NOT IN (
+                      SELECT card_instance_id FROM active_missions
+                      WHERE status = 'active' AND card_instance_id IS NOT NULL
+                  )
                 GROUP BY c.card_id, c.name, uc.merge_level, uc.locked_perk
                 HAVING COUNT(*) >= 2
                 ORDER BY c.name, uc.merge_level
@@ -291,9 +295,15 @@ class MergeCommands(commands.Cog):
                     user_id, card_id
                 )
             
-            # Filter out PvP-locked instances
+            # Filter out PvP-locked and mission-busy instances
             pvp_locked = getattr(self.bot, 'pvp_locked_cards', set())
-            instances = [i for i in instances if str(i['instance_id']) not in pvp_locked]
+            mission_busy_rows = await conn.fetch(
+                """SELECT card_instance_id FROM active_missions
+                   WHERE status = 'active' AND card_instance_id IS NOT NULL"""
+            )
+            mission_busy = {str(r['card_instance_id']) for r in mission_busy_rows}
+            all_locked = pvp_locked | mission_busy
+            instances = [i for i in instances if str(i['instance_id']) not in all_locked]
 
             if len(instances) < 2:
                 # Build helpful error message
